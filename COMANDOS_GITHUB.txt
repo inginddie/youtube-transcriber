@@ -1,0 +1,154 @@
+================================================================================
+🚀 COMANDOS PARA SUBIR A GITHUB
+================================================================================
+
+PASO 1: Crear repositorio en GitHub
+------------------------------------
+1. Ve a: https://github.com/new
+2. Nombre: youtube-transcriber
+3. Descripción: YouTube video transcriber with AI-powered search and chat
+4. Público o Privado (tu elección)
+5. NO marques "Initialize with README"
+6. Click "Create repository"
+
+
+PASO 2: Ejecutar estos comandos en tu terminal
+-----------------------------------------------
+
+# Navegar a la carpeta del proyecto
+cd youtube-transcriber
+
+# Inicializar Git
+git init
+
+# Agregar todos los archivos
+git add .
+
+# Hacer el primer commit
+git commit -m "🎉 Initial commit: YouTube Transcriber Pro v1.0"
+
+# Conectar con GitHub (REEMPLAZA TU_USUARIO con tu username)
+git remote add origin https://github.com/TU_USUARIO/youtube-transcriber.git
+
+# Cambiar a rama main
+git branch -M main
+
+# Subir a GitHub
+git push -u origin main
+
+
+PASO 3: Configurar el repositorio en GitHub
+--------------------------------------------
+1. Ve a tu repositorio en GitHub
+2. Click en "About" (engranaje en la parte superior derecha)
+3. Agregar:
+   - Description: YouTube video transcriber with AI-powered search and chat
+   - Topics: youtube, transcription, whisper, openai, rag, gradio, python, ai
+   - Website: (si tienes)
+4. Click "Save changes"
+
+
+PASO 4: Crear primera release (opcional pero recomendado)
+----------------------------------------------------------
+
+# Opción A: Desde terminal
+git tag -a v1.0.0 -m "Release v1.0.0: Complete transcription, RAG, and management system"
+git push origin v1.0.0
+
+# Opción B: Desde GitHub
+1. Ve a tu repo → Releases → "Create a new release"
+2. Tag: v1.0.0
+3. Title: v1.0.0 - Initial Release
+4. Description: Copia el contenido de CHANGELOG.md
+5. Click "Publish release"
+
+
+PASO 5: Verificar que todo esté bien
+-------------------------------------
+1. Verifica que el README se vea bien
+2. Verifica que los links funcionen
+3. Verifica que .env NO esté en el repo
+4. Verifica que los Issues templates estén disponibles
+
+
+================================================================================
+✅ COMANDOS RÁPIDOS DE REFERENCIA
+================================================================================
+
+# Ver estado de Git
+git status
+
+# Ver archivos que se subirán
+git ls-files
+
+# Ver remotes configurados
+git remote -v
+
+# Ver historial de commits
+git log --oneline
+
+# Actualizar después de cambios
+git add .
+git commit -m "feat: descripción del cambio"
+git push
+
+
+================================================================================
+🔧 SOLUCIÓN DE PROBLEMAS
+================================================================================
+
+Error: "remote origin already exists"
+-------------------------------------
+git remote remove origin
+git remote add origin https://github.com/TU_USUARIO/youtube-transcriber.git
+
+
+Error: "failed to push some refs"
+----------------------------------
+git pull origin main --rebase
+git push
+
+
+Error: Autenticación
+--------------------
+Opción 1: Usar token personal
+1. GitHub → Settings → Developer settings → Personal access tokens
+2. Generate new token (classic)
+3. Seleccionar "repo"
+4. Copiar el token
+5. Usar como contraseña cuando Git lo pida
+
+Opción 2: Usar SSH
+1. ssh-keygen -t ed25519 -C "tu-email@ejemplo.com"
+2. Copiar contenido de ~/.ssh/id_ed25519.pub
+3. GitHub → Settings → SSH and GPG keys → New SSH key
+4. Pegar la clave
+5. Cambiar remote: git remote set-url origin git@github.com:TU_USUARIO/youtube-transcriber.git
+
+
+================================================================================
+📝 DESPUÉS DE SUBIR
+================================================================================
+
+1. Actualizar README.md con el link correcto del repo
+2. Agregar social preview image (Settings → General → Social preview)
+3. Habilitar Discussions (Settings → General → Features)
+4. Configurar GitHub Pages para docs (Settings → Pages)
+5. Agregar OPENAI_API_KEY en Secrets (si usas GitHub Actions)
+
+
+================================================================================
+🎉 ¡LISTO!
+================================================================================
+
+Tu repositorio estará en:
+https://github.com/TU_USUARIO/youtube-transcriber
+
+Compártelo con:
+- Twitter/X
+- LinkedIn
+- Reddit (r/Python, r/MachineLearning)
+- Hacker News
+- Product Hunt
+
+¡Buena suerte con tu proyecto! 🚀
