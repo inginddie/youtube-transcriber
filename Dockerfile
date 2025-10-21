@@ -23,4 +23,4 @@ COPY . .
 EXPOSE 7860
 
 # Comando de inicio (los directorios se crean en runtime)
-CMD ["python", "app_gradio_secure.py"]
+CMD ["python", "app_gradio.py"]

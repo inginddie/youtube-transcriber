@@ -740,17 +740,35 @@ def create_ui():
 
 def main():
     """Launch Gradio app"""
+    import os
+    
+    # Validate API key
+    from config import OPENAI_API_KEY
+    if not OPENAI_API_KEY:
+        print("❌ ERROR: OPENAI_API_KEY not found in environment variables")
+        print("Please set OPENAI_API_KEY in Railway variables")
+        exit(1)
+    
     # Setup
     print("🔧 Setting up directories...")
     create_directories()
     
     # Create and launch UI
     print("🚀 Launching Gradio interface...")
+    
+    # Get port from environment (Railway) or use default
+    port = int(os.getenv("PORT", GRADIO_PORT))
+    is_production = os.getenv("RAILWAY_ENVIRONMENT") == "production"
+    
+    print(f"   ✓ Using port: {port}")
+    print(f"   ✓ Environment: {'production' if is_production else 'development'}")
+    
     app = create_ui()
     app.launch(
-        server_port=GRADIO_PORT,
-        share=GRADIO_SHARE,
-        show_error=True
+        server_name="0.0.0.0",  # Required for Railway
+        server_port=port,
+        share=False,  # Don't share in production
+        show_error=not is_production
     )
 
 
