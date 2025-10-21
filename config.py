@@ -10,8 +10,8 @@ load_dotenv()
 
 # API Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY not found in environment variables")
+# Note: API key validation is done at runtime, not import time
+# This allows Docker builds to succeed without the key
 
 # Model Configuration
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "whisper-1")

@@ -19,11 +19,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copiar el resto de la aplicación
 COPY . .
 
-# Crear directorios necesarios
-RUN python -c "from config import create_directories; create_directories()"
-
 # Exponer puerto
 EXPOSE 7860
 
-# Comando de inicio
+# Comando de inicio (los directorios se crean en runtime)
 CMD ["python", "app_gradio_secure.py"]
