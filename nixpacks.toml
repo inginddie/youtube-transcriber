@@ -2,7 +2,7 @@
 nixPkgs = ["python311", "ffmpeg"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = ["python -m pip install --upgrade pip", "pip install -r requirements.txt"]
 
 [phases.build]
 cmds = ["python -c 'from config import create_directories; create_directories()'"]
