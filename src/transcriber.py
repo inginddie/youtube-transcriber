@@ -190,7 +190,16 @@ class YouTubeTranscriber:
         logger.info(f"✂️  Splitting audio into {num_chunks} chunks...")
         
         # Get audio duration using ffprobe
-        ffprobe_path = Path(YouTubeTranscriber._ffmpeg_location_cache) / "ffprobe.exe"
+        # Detectar si estamos en Windows o Linux
+        ffprobe_name = "ffprobe.exe" if os.name == 'nt' else "ffprobe"
+        
+        # Si ffmpeg_location es un directorio, agregar el nombre del ejecutable
+        if YouTubeTranscriber._ffmpeg_location_cache and Path(YouTubeTranscriber._ffmpeg_location_cache).is_dir():
+            ffprobe_path = Path(YouTubeTranscriber._ffmpeg_location_cache) / ffprobe_name
+        else:
+            # Si no es un directorio, usar solo el nombre (está en PATH)
+            ffprobe_path = ffprobe_name
+        
         result = subprocess.run(
             [str(ffprobe_path), "-v", "error", "-show_entries", 
              "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", 
