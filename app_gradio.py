@@ -50,6 +50,115 @@ def read_transcript_file(file_path: str):
         return f"❌ Error reading file: {str(e)}\n\nPath: {file_path}"
 
 
+def index_transcripts_ui(progress=gr.Progress()):
+    """Index all transcripts for RAG"""
+    try:
+        from src.rag_engine import RAGEngine
+        
+        progress(0.1, desc="🔄 Initializing RAG engine...")
+        rag = RAGEngine()
+        
+        progress(0.3, desc="📂 Loading transcripts...")
+        transcripts = rag.load_transcripts()
+        
+        if not transcripts:
+            return "❌ No transcripts found. Please transcribe some videos first."
+        
+        progress(0.5, desc=f"🗑️ Cleaning old Vector DB...")
+        
+        def index_progress(msg):
+            progress(0.7, desc=msg)
+        
+        progress(0.6, desc=f"📊 Indexing {len(transcripts)} transcripts...")
+        rag.index_transcripts(progress_callback=index_progress)
+        
+        progress(1.0, desc="✅ Indexing complete!")
+        
+        return f"✅ Successfully indexed {len(transcripts)} transcripts!\n\nYou can now use the Chat and Search tabs."
+        
+    except Exception as e:
+        return f"❌ Error indexing transcripts: {str(e)}"
+
+
+def search_transcripts(query: str, top_k: int = 3):
+    """Search transcripts using semantic search"""
+    if not query or query.strip() == "":
+        return "❌ Please enter a search query."
+    
+    try:
+        from src.rag_engine import RAGEngine
+        
+        # Inicializar RAG engine
+        rag = RAGEngine()
+        
+        # Cargar vector store
+        try:
+            rag.load_vector_store()
+        except ValueError:
+            return "❌ Please index your transcripts first in the 'RAG Setup' tab."
+        
+        # Buscar
+        results = rag.search(query, top_k=top_k)
+        
+        if not results:
+            return "🔍 No results found for your query."
+        
+        # Formatear resultados
+        output = f"## 🔍 Search Results for: \"{query}\"\n\n"
+        output += f"Found {len(results)} relevant results:\n\n"
+        
+        for i, result in enumerate(results, 1):
+            output += f"### {i}. {result['title']}\n\n"
+            output += f"**Relevance Score:** {result['score']:.2f}\n\n"
+            output += f"**Content:**\n{result['content']}\n\n"
+            output += f"**Source:** [{result['title']}]({result['url']})\n\n"
+            output += "---\n\n"
+        
+        return output
+        
+    except Exception as e:
+        return f"❌ Error searching: {str(e)}"
+
+
+def chat_with_transcripts(message: str, history: list):
+    """Chat with transcripts using RAG"""
+    if not message or message.strip() == "":
+        return history
+    
+    try:
+        from src.rag_engine import RAGEngine
+        
+        # Inicializar RAG engine
+        rag = RAGEngine()
+        
+        # Cargar vector store
+        try:
+            rag.load_vector_store()
+        except ValueError as e:
+            error_msg = "❌ Please index your transcripts first in the 'RAG Setup' tab."
+            return history + [[message, error_msg]]
+        
+        # Setup conversation chain
+        rag.setup_conversation_chain()
+        
+        # Get answer
+        result = rag.chat(message)
+        
+        # Format answer with sources
+        answer = result['answer']
+        
+        if result.get('sources'):
+            answer += "\n\n📚 **Sources:**\n"
+            for i, source in enumerate(result['sources'], 1):
+                answer += f"{i}. [{source['title']}]({source['url']})\n"
+        
+        return history + [[message, answer]]
+        
+    except Exception as e:
+        error_msg = f"❌ Error: {str(e)}"
+        return history + [[message, error_msg]]
+
+
 def transcribe_videos(urls_text: str, skip_existing: bool, auto_index: bool, progress=gr.Progress()):
     """
     Transcribe videos from URLs
