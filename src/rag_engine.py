@@ -6,12 +6,13 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import Chroma
-from langchain.chains.conversational_retrieval.base import ConversationalRetrievalChain
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.chat_models import ChatOpenAI
+from langchain.vectorstores import Chroma
+from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
-from langchain_core.prompts import PromptTemplate
+from langchain.prompts import PromptTemplate
 
 from config import (
     OPENAI_API_KEY,
