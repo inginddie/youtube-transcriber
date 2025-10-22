@@ -94,7 +94,8 @@ def transcribe_videos(urls_text: str, skip_existing: bool, auto_index: bool, pro
         else:
             emoji = "🔄"
         
-        progress_msg = f"{emoji} Video {current_video[0]}/{total} ({percentage}%) | {current_step[0]}: {message[:50]}"
+        # Mensaje más corto y claro
+        progress_msg = f"{emoji} {percentage}% | Video {current_video[0]}/{total} | {current_step[0]}"
         progress(total_progress, desc=progress_msg)
     
     # Process videos
@@ -469,32 +470,60 @@ def create_ui():
     
     # CSS personalizado para mejorar la visualización
     custom_css = """
-    /* Barra de progreso más visible */
-    .progress-bar {
-        height: 30px !important;
-        font-size: 16px !important;
-        font-weight: bold !important;
+    /* Barra de progreso más visible y con mejor z-index */
+    .progress-bar-wrap {
+        position: relative !important;
+        z-index: 100 !important;
+        margin: 16px 0 !important;
     }
     
-    /* Mejorar visibilidad del progreso */
-    .progress-text {
-        font-size: 14px !important;
-        color: #2563eb !important;
+    .progress-bar {
+        height: 35px !important;
+        font-size: 15px !important;
         font-weight: 600 !important;
-        padding: 8px !important;
-        background: #eff6ff !important;
-        border-radius: 6px !important;
-        margin: 4px 0 !important;
+        border-radius: 8px !important;
+    }
+    
+    /* Texto del progreso encima de todo */
+    .progress-text {
+        position: relative !important;
+        z-index: 101 !important;
+        font-size: 15px !important;
+        color: #1e40af !important;
+        font-weight: 600 !important;
+        padding: 12px 16px !important;
+        background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
+        border-radius: 8px !important;
+        margin: 8px 0 !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        display: block !important;
+        width: 100% !important;
+        text-align: center !important;
+    }
+    
+    /* Asegurar que el progreso esté visible */
+    .wrap.svelte-1cl284s {
+        z-index: 100 !important;
+        position: relative !important;
     }
     
     /* Animación suave para la barra */
     @keyframes pulse {
         0%, 100% { opacity: 1; }
-        50% { opacity: 0.8; }
+        50% { opacity: 0.85; }
     }
     
     .progress-bar-animated {
         animation: pulse 2s ease-in-out infinite;
+    }
+    
+    /* Mejorar el contraste del texto en la barra */
+    .progress-level {
+        color: white !important;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        line-height: 35px !important;
     }
     """
     
