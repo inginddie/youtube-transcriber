@@ -230,7 +230,16 @@ class YouTubeTranscriber:
         
         # Split audio into chunks
         chunks = []
-        ffmpeg_path = Path(YouTubeTranscriber._ffmpeg_location_cache) / "ffmpeg.exe"
+        
+        # Detectar si estamos en Windows o Linux para ffmpeg
+        ffmpeg_name = "ffmpeg.exe" if os.name == 'nt' else "ffmpeg"
+        
+        # Si ffmpeg_location es un directorio, agregar el nombre del ejecutable
+        if YouTubeTranscriber._ffmpeg_location_cache and Path(YouTubeTranscriber._ffmpeg_location_cache).is_dir():
+            ffmpeg_path = Path(YouTubeTranscriber._ffmpeg_location_cache) / ffmpeg_name
+        else:
+            # Si no es un directorio, usar solo el nombre (está en PATH)
+            ffmpeg_path = ffmpeg_name
         
         for i in range(num_chunks):
             start_time = i * chunk_duration
