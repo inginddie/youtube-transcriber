@@ -92,10 +92,11 @@ def transcribe_videos(urls_text: str, skip_existing: bool, auto_index: bool, pro
             summary += f"\n⚠️ **Indexing failed:** {str(e)}\n"
             summary += "You can manually index in the 'RAG Setup' tab.\n"
     
-    # Get list of transcript files
+    # Get list of transcript files and update dropdown
     transcript_files = list_transcript_files()
     
-    return summary, transcript_files
+    # Return summary and updated dropdown choices
+    return summary, gr.Dropdown(choices=transcript_files)
 
 
 def list_transcript_files():
@@ -459,7 +460,8 @@ def create_ui():
                         file_list = gr.Dropdown(
                             label="Select a file to view",
                             choices=list_transcript_files(),
-                            interactive=True
+                            interactive=True,
+                            allow_custom_value=True  # Permite valores que no están en la lista inicial
                         )
                         
                         file_content = gr.Textbox(
@@ -618,7 +620,7 @@ def create_ui():
         )
         
         refresh_btn.click(
-            fn=list_transcript_files,
+            fn=lambda: gr.Dropdown(choices=list_transcript_files()),
             inputs=[],
             outputs=[file_list]
         )
