@@ -75,6 +75,14 @@ class RAGEngine:
     
     def index_transcripts(self, progress_callback: Optional[callable] = None):
         """Create vector embeddings and index all transcripts"""
+        # IMPORTANTE: Limpiar Vector DB existente primero
+        import shutil
+        if VECTOR_DB_DIR.exists():
+            if progress_callback:
+                progress_callback("🗑️ Limpiando Vector DB anterior...")
+            shutil.rmtree(VECTOR_DB_DIR)
+            VECTOR_DB_DIR.mkdir(parents=True, exist_ok=True)
+        
         transcripts = self.load_transcripts()
         
         if not transcripts:

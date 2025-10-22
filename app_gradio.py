@@ -26,15 +26,28 @@ def list_transcript_files():
 
 def read_transcript_file(file_path: str):
     """Read and return content of a transcript file"""
-    if not file_path:
-        return "No file selected"
+    if not file_path or file_path == "":
+        return "📁 No file selected. Please select a file from the dropdown above."
     
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        from pathlib import Path
+        path = Path(file_path)
+        
+        if not path.exists():
+            return f"❌ File not found: {file_path}"
+        
+        with open(path, 'r', encoding='utf-8') as f:
             content = f.read()
-        return content
+        
+        # Agregar header con info del archivo
+        file_size = path.stat().st_size / 1024  # KB
+        header = f"📄 File: {path.name}\n"
+        header += f"📊 Size: {file_size:.2f} KB\n"
+        header += f"{'='*80}\n\n"
+        
+        return header + content
     except Exception as e:
-        return f"Error reading file: {str(e)}"
+        return f"❌ Error reading file: {str(e)}\n\nPath: {file_path}"
 
 
 def transcribe_videos(urls_text: str, skip_existing: bool, auto_index: bool, progress=gr.Progress()):
@@ -736,7 +749,7 @@ def create_ui():
         )
         
         file_list.change(
-            fn=lambda x: x,
+            fn=lambda x: x if x else None,
             inputs=[file_list],
             outputs=[download_btn]
         )
