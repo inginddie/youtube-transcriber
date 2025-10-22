@@ -34,10 +34,68 @@ def transcribe_videos(urls_text: str, skip_existing: bool, auto_index: bool, pro
     # Progress tracking
     results = []
     status_messages = []
+    current_video = [0]  # Usar lista para poder modificar en callback
+    current_step = ["Iniciando..."]
     
     def progress_callback(message: str):
         status_messages.append(message)
-        progress(len(results) / len(urls), desc=message)
+        
+        # Detectar el paso actual
+        if "PROCESSING VIDEO" in message:
+            try:
+                video_num = int(message.split("#")[1].split()[0])
+                current_video[0] = video_num
+                current_step[0] = "Preparando"
+            except:
+                pass
+        elif "Downloading" in message or "Download" in message:
+            current_step[0] = "Descargando"
+        elif "Transcribing" in message or "Whisper" in message:
+            current_step[0] = "Transcribiendo"
+        elif "Saving" in message:
+            current_step[0] = "Guardando"
+        elif "COMPLETED" in message:
+            current_step[0] = "Completado"
+        
+        # Calcular porcentaje basado en videos completados y paso actual
+        completed = len(results)
+        total = len(urls)
+        
+        # Progreso base por videos completados
+        base_progress = completed / total if total > 0 else 0
+        
+        # Progreso adicional del video actual (estimado)
+        step_progress = 0
+        if current_step[0] == "Descargando":
+            step_progress = 0.3
+        elif current_step[0] == "Transcribiendo":
+            step_progress = 0.7
+        elif current_step[0] == "Guardando":
+            step_progress = 0.9
+        elif current_step[0] == "Completado":
+            step_progress = 1.0
+        
+        # Progreso total
+        current_video_progress = step_progress / total if total > 0 else 0
+        total_progress = base_progress + current_video_progress
+        total_progress = min(total_progress, 1.0)  # No exceder 100%
+        
+        percentage = int(total_progress * 100)
+        
+        # Crear mensaje de progreso mejorado con emojis
+        if current_step[0] == "Descargando":
+            emoji = "⬇️"
+        elif current_step[0] == "Transcribiendo":
+            emoji = "🎤"
+        elif current_step[0] == "Guardando":
+            emoji = "💾"
+        elif current_step[0] == "Completado":
+            emoji = "✅"
+        else:
+            emoji = "🔄"
+        
+        progress_msg = f"{emoji} Video {current_video[0]}/{total} ({percentage}%) | {current_step[0]}: {message[:50]}"
+        progress(total_progress, desc=progress_msg)
     
     # Process videos
     results = transcriber.process_multiple_videos(urls, progress_callback, skip_existing)
@@ -409,7 +467,42 @@ def clear_all_data():
 def create_ui():
     """Create Gradio interface"""
     
-    with gr.Blocks(title="YouTube Transcriber Pro", theme=gr.themes.Soft()) as app:
+    # CSS personalizado para mejorar la visualización
+    custom_css = """
+    /* Barra de progreso más visible */
+    .progress-bar {
+        height: 30px !important;
+        font-size: 16px !important;
+        font-weight: bold !important;
+    }
+    
+    /* Mejorar visibilidad del progreso */
+    .progress-text {
+        font-size: 14px !important;
+        color: #2563eb !important;
+        font-weight: 600 !important;
+        padding: 8px !important;
+        background: #eff6ff !important;
+        border-radius: 6px !important;
+        margin: 4px 0 !important;
+    }
+    
+    /* Animación suave para la barra */
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.8; }
+    }
+    
+    .progress-bar-animated {
+        animation: pulse 2s ease-in-out infinite;
+    }
+    """
+    
+    with gr.Blocks(
+        title="YouTube Transcriber Pro", 
+        theme=gr.themes.Soft(),
+        css=custom_css
+    ) as app:
         gr.Markdown("""
         # 🎥 YouTube Transcriber Pro
         
