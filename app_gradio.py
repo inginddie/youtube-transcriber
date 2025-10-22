@@ -9,6 +9,34 @@ from src.transcriber import YouTubeTranscriber
 from src.utils import parse_urls_input
 
 
+def list_transcript_files():
+    """List all transcript files"""
+    if not TRANSCRIPTS_DIR.exists():
+        return []
+    
+    files = []
+    for ext in ['*.json', '*.txt']:
+        files.extend(TRANSCRIPTS_DIR.glob(ext))
+    
+    # Sort by modification time (newest first)
+    files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    
+    return [str(f) for f in files]
+
+
+def read_transcript_file(file_path: str):
+    """Read and return content of a transcript file"""
+    if not file_path:
+        return "No file selected"
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return content
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
+
+
 def transcribe_videos(urls_text: str, skip_existing: bool, auto_index: bool, progress=gr.Progress()):
     """
     Transcribe videos from URLs
