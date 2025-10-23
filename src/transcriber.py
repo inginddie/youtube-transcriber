@@ -148,7 +148,18 @@ class YouTubeTranscriber:
                     'skip': ['hls', 'dash']
                 }
             },
+            # Intentar usar cookies del navegador (Chrome primero, luego Firefox)
+            'cookiesfrombrowser': ('chrome',),
         }
+        
+        # Si falla con Chrome, intentar sin cookies
+        try:
+            # Primer intento con cookies de Chrome
+            pass
+        except:
+            # Si falla, remover cookies y usar solo headers
+            if 'cookiesfrombrowser' in ydl_opts:
+                del ydl_opts['cookiesfrombrowser']
         
         if progress_callback:
             def progress_hook(d):
@@ -159,28 +170,64 @@ class YouTubeTranscriber:
             
             ydl_opts['progress_hooks'] = [progress_hook]
         
-        try:
-            logger.info(f"🔧 Configuring yt-dlp with FFmpeg: {YouTubeTranscriber._ffmpeg_location_cache}")
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                logger.info("⬇️  Downloading video metadata...")
-                info = ydl.extract_info(url, download=True)
-                title = info.get('title', 'Unknown')
-                duration = info.get('duration', 0)
+        # Intentar múltiples estrategias de descarga
+        strategies = [
+            # Estrategia 1: Con cookies de Chrome
+            {'cookiesfrombrowser': ('chrome',)},
+            # Estrategia 2: Con cookies de Firefox
+            {'cookiesfrombrowser': ('firefox',)},
+            # Estrategia 3: Sin cookies, solo headers
+            {},
+            # Estrategia 4: Modo básico
+            {'user_agent': None, 'http_headers': {}}
+        ]
+        
+        last_error = None
+        
+        for i, strategy in enumerate(strategies, 1):
+            try:
+                logger.info(f"🔧 Strategy {i}/{len(strategies)}: Configuring yt-dlp with FFmpeg: {YouTubeTranscriber._ffmpeg_location_cache}")
                 
-                logger.info(f"✅ Download complete: {title}")
-                logger.info(f"⏱️  Duration: {duration // 60}m {duration % 60}s")
+                # Aplicar estrategia actual
+                current_opts = ydl_opts.copy()
+                if strategy:
+                    current_opts.update(strategy)
+                else:
+                    # Remover opciones avanzadas para estrategia básica
+                    current_opts.pop('cookiesfrombrowser', None)
+                    if i == 4:  # Estrategia básica
+                        current_opts.pop('user_agent', None)
+                        current_opts.pop('http_headers', None)
+                        current_opts.pop('extractor_args', None)
                 
-                file_size_mb = output_path.stat().st_size / (1024 * 1024)
-                logger.info(f"📦 Audio file size: {file_size_mb:.2f}MB")
+                with yt_dlp.YoutubeDL(current_opts) as ydl:
+                    logger.info("⬇️  Downloading video metadata...")
+                    info = ydl.extract_info(url, download=True)
+                    title = info.get('title', 'Unknown')
+                    duration = info.get('duration', 0)
+                    
+                    logger.info(f"✅ Download complete: {title}")
+                    logger.info(f"⏱️  Duration: {duration // 60}m {duration % 60}s")
+                    
+                    file_size_mb = output_path.stat().st_size / (1024 * 1024)
+                    logger.info(f"📦 Audio file size: {file_size_mb:.2f}MB")
+                    
+                    if progress_callback:
+                        progress_callback(f"Downloaded: {title}")
+                    
+                    return output_path, title
                 
-                if progress_callback:
-                    progress_callback(f"Downloaded: {title}")
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(f"⚠️  Strategy {i} failed: {last_error}")
                 
-                return output_path, title
-        except Exception as e:
-            logger.error(f"Failed to download audio: {str(e)}")
-            raise Exception(f"Failed to download audio: {str(e)}")
+                if i < len(strategies):
+                    logger.info(f"🔄 Trying next strategy...")
+                    continue  # Intentar siguiente estrategia
+                else:
+                    # Todas las estrategias fallaron
+                    logger.error(f"❌ All {len(strategies)} strategies failed")
+                    raise Exception(f"Failed to download audio after {len(strategies)} attempts. Last error: {last_error}")
     
     def _split_audio(self, audio_path: Path, max_size_mb: float = 24) -> list[Path]:
         """
