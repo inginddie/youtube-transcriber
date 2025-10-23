@@ -171,15 +171,16 @@ class YouTubeTranscriber:
             ydl_opts['progress_hooks'] = [progress_hook]
         
         # Intentar múltiples estrategias de descarga
+        # Orden optimizado: primero sin cookies (para servidores), luego con cookies (para local)
         strategies = [
-            # Estrategia 1: Con cookies de Chrome
+            # Estrategia 1: Sin cookies, solo headers avanzados (mejor para servidores)
+            {'remove_cookies': True},
+            # Estrategia 2: Modo básico sin opciones avanzadas
+            {'remove_cookies': True, 'basic_mode': True},
+            # Estrategia 3: Con cookies de Chrome (solo funciona si Chrome está instalado)
             {'cookiesfrombrowser': ('chrome',)},
-            # Estrategia 2: Con cookies de Firefox
+            # Estrategia 4: Con cookies de Firefox (solo funciona si Firefox está instalado)
             {'cookiesfrombrowser': ('firefox',)},
-            # Estrategia 3: Sin cookies, solo headers
-            {},
-            # Estrategia 4: Modo básico
-            {'user_agent': None, 'http_headers': {}}
         ]
         
         last_error = None
@@ -190,15 +191,20 @@ class YouTubeTranscriber:
                 
                 # Aplicar estrategia actual
                 current_opts = ydl_opts.copy()
-                if strategy:
-                    current_opts.update(strategy)
-                else:
-                    # Remover opciones avanzadas para estrategia básica
+                
+                # Remover cookiesfrombrowser si la estrategia lo requiere
+                if strategy.get('remove_cookies'):
                     current_opts.pop('cookiesfrombrowser', None)
-                    if i == 4:  # Estrategia básica
-                        current_opts.pop('user_agent', None)
-                        current_opts.pop('http_headers', None)
-                        current_opts.pop('extractor_args', None)
+                
+                # Modo básico: remover opciones avanzadas
+                if strategy.get('basic_mode'):
+                    current_opts.pop('user_agent', None)
+                    current_opts.pop('http_headers', None)
+                    current_opts.pop('extractor_args', None)
+                
+                # Agregar cookies si la estrategia lo especifica
+                if 'cookiesfrombrowser' in strategy:
+                    current_opts['cookiesfrombrowser'] = strategy['cookiesfrombrowser']
                 
                 with yt_dlp.YoutubeDL(current_opts) as ydl:
                     logger.info("⬇️  Downloading video metadata...")
