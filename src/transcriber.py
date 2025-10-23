@@ -186,6 +186,7 @@ class YouTubeTranscriber:
         ]
         
         last_error = None
+        first_real_error = None  # Guardar el primer error que no sea de cookies
         
         for i, strategy in enumerate(strategies, 1):
             try:
@@ -227,13 +228,17 @@ class YouTubeTranscriber:
                 
             except Exception as e:
                 last_error = str(e)
-                logger.warning(f"⚠️  Strategy {i} failed: {last_error}")
                 
                 # Si el error es de cookies no encontradas, skip silenciosamente
-                if "could not find" in last_error.lower() and "cookies" in last_error.lower():
-                    logger.info(f"⏭️  Skipping cookie-based strategy (browser not available)")
-                    if i < len(strategies):
-                        continue
+                is_cookie_error = "could not find" in last_error.lower() and "cookies" in last_error.lower()
+                
+                if is_cookie_error:
+                    logger.info(f"⏭️  Strategy {i} skipped (browser not available)")
+                else:
+                    # Guardar el primer error real (no de cookies)
+                    if not first_real_error:
+                        first_real_error = last_error
+                    logger.warning(f"⚠️  Strategy {i}/{len(strategies)} failed: {last_error[:200]}")
                 
                 if i < len(strategies):
                     logger.info(f"🔄 Trying next strategy...")
@@ -242,15 +247,18 @@ class YouTubeTranscriber:
                     # Todas las estrategias fallaron
                     logger.error(f"❌ All {len(strategies)} strategies failed")
                     
+                    # Usar el primer error real, no el de cookies
+                    error_to_show = first_real_error or last_error
+                    
                     # Mensaje más útil si es detección de bot
-                    if "bot" in last_error.lower() or "sign in" in last_error.lower():
+                    if "bot" in error_to_show.lower() or "sign in" in error_to_show.lower():
                         raise Exception(
                             f"YouTube is blocking this video (bot detection). "
                             f"This video may require authentication or may be age-restricted. "
-                            f"Try a different video or contact support. Error: {last_error}"
+                            f"Try a different video. Error: {error_to_show}"
                         )
                     else:
-                        raise Exception(f"Failed to download audio after {len(strategies)} attempts. Last error: {last_error}")
+                        raise Exception(f"Failed to download audio after {len(strategies)} attempts. Error: {error_to_show}")
     
     def _split_audio(self, audio_path: Path, max_size_mb: float = 24) -> list[Path]:
         """
