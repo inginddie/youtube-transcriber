@@ -131,7 +131,7 @@ class YouTubeTranscriber:
             'quiet': True,
             'no_warnings': True,
             'ffmpeg_location': YouTubeTranscriber._ffmpeg_location_cache,
-            # Configuraciones para evitar bloqueo 403
+            # Configuraciones anti-bot más agresivas
             'nocheckcertificate': True,
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'referer': 'https://www.youtube.com/',
@@ -139,17 +139,19 @@ class YouTubeTranscriber:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-us,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
                 'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Sec-Fetch-Dest': 'document',
             },
-            # Usar extractor de YouTube más robusto
+            # Usar cliente Android (más difícil de bloquear)
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android', 'web'],
-                    'skip': ['hls', 'dash']
+                    'player_client': ['android', 'ios', 'web'],
+                    'skip': ['hls', 'dash'],
                 }
             },
-            # Intentar usar cookies del navegador (Chrome primero, luego Firefox)
-            'cookiesfrombrowser': ('chrome',),
         }
         
         # Si falla con Chrome, intentar sin cookies
@@ -227,13 +229,28 @@ class YouTubeTranscriber:
                 last_error = str(e)
                 logger.warning(f"⚠️  Strategy {i} failed: {last_error}")
                 
+                # Si el error es de cookies no encontradas, skip silenciosamente
+                if "could not find" in last_error.lower() and "cookies" in last_error.lower():
+                    logger.info(f"⏭️  Skipping cookie-based strategy (browser not available)")
+                    if i < len(strategies):
+                        continue
+                
                 if i < len(strategies):
                     logger.info(f"🔄 Trying next strategy...")
                     continue  # Intentar siguiente estrategia
                 else:
                     # Todas las estrategias fallaron
                     logger.error(f"❌ All {len(strategies)} strategies failed")
-                    raise Exception(f"Failed to download audio after {len(strategies)} attempts. Last error: {last_error}")
+                    
+                    # Mensaje más útil si es detección de bot
+                    if "bot" in last_error.lower() or "sign in" in last_error.lower():
+                        raise Exception(
+                            f"YouTube is blocking this video (bot detection). "
+                            f"This video may require authentication or may be age-restricted. "
+                            f"Try a different video or contact support. Error: {last_error}"
+                        )
+                    else:
+                        raise Exception(f"Failed to download audio after {len(strategies)} attempts. Last error: {last_error}")
     
     def _split_audio(self, audio_path: Path, max_size_mb: float = 24) -> list[Path]:
         """
