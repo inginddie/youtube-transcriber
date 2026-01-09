@@ -137,6 +137,92 @@ def check_rate_limit(session_id: str, operation: str, request: gr.Request = None
     return True, None
 
 
+def logout(session_id: str) -> tuple:
+    """
+    Logout user and clear session
+    Returns: (message, empty_session_id)
+    """
+    if session_id and session_id in user_sessions:
+        del user_sessions[session_id]
+        return (
+            "✅ **Logged out successfully**\n\nYour session has been terminated. Please login again to continue.",
+            ""
+        )
+    return (
+        "ℹ️ **No active session**\n\nYou are not currently logged in.",
+        ""
+    )
+
+
+def get_session_status(session_id: str) -> str:
+    """Get current session status and rate limit info"""
+    if not security_manager.auth.require_auth:
+        return "🟢 **Status**: Public Access (No Authentication Required)"
+
+    if not session_id or session_id not in user_sessions:
+        return "🔴 **Status**: Not Authenticated\n\nPlease login to use the application."
+
+    session = user_sessions[session_id]
+    client_id = session["user_id"]
+
+    # Calculate time remaining
+    time_active = time.time() - session["last_activity"]
+    time_remaining = SESSION_TIMEOUT - time_active
+    minutes_remaining = int(time_remaining / 60)
+
+    # Get rate limit info
+    transcription_remaining = security_manager.transcription_limiter.get_remaining(client_id)
+    search_remaining = security_manager.search_limiter.get_remaining(client_id)
+    chat_remaining = security_manager.chat_limiter.get_remaining(client_id)
+
+    status = f"🟢 **Status**: Authenticated ✅\n\n"
+    status += f"**Session Info:**\n"
+    status += f"- Session ID: `{session_id[:16]}...`\n"
+    status += f"- User: `{client_id}`\n"
+    status += f"- Time Remaining: {minutes_remaining} minutes\n\n"
+    status += f"**Rate Limits Remaining:**\n"
+    status += f"- 🎬 Transcriptions: {transcription_remaining}/{security_manager.transcription_limiter.max_requests} per hour\n"
+    status += f"- 🔍 Searches: {search_remaining}/{security_manager.search_limiter.max_requests} per minute\n"
+    status += f"- 💬 Chat Messages: {chat_remaining}/{security_manager.chat_limiter.max_requests} per minute\n"
+
+    return status
+
+
+def get_security_dashboard() -> str:
+    """Get security dashboard with system stats"""
+    dashboard = "# 🔒 Security Dashboard\n\n"
+
+    # Authentication status
+    dashboard += "## Authentication\n"
+    if security_manager.auth.require_auth:
+        dashboard += "- **Status**: ✅ Enabled\n"
+        dashboard += f"- **Active Sessions**: {len(user_sessions)}\n"
+        dashboard += f"- **Session Timeout**: {SESSION_TIMEOUT // 60} minutes\n"
+    else:
+        dashboard += "- **Status**: ⚠️ Disabled (Public Access)\n"
+        dashboard += "- **Recommendation**: Enable REQUIRE_AUTH=true for production\n"
+
+    dashboard += "\n## Rate Limiting\n"
+    dashboard += f"- **Transcriptions**: {security_manager.transcription_limiter.max_requests} per hour\n"
+    dashboard += f"- **Searches**: {security_manager.search_limiter.max_requests} per minute\n"
+    dashboard += f"- **Chat Messages**: {security_manager.chat_limiter.max_requests} per minute\n"
+
+    dashboard += "\n## Security Features\n"
+    dashboard += f"- **Failed Attempt Limit**: {security_manager.max_failed_attempts} attempts\n"
+    dashboard += f"- **Blacklisted IPs**: {len(security_manager.blacklist)}\n"
+    dashboard += f"- **Failed Attempts Tracked**: {len(security_manager.failed_attempts)} clients\n"
+
+    if security_manager.blacklist:
+        dashboard += "\n### ⚠️ Blacklisted Clients:\n"
+        for client in security_manager.blacklist:
+            dashboard += f"- `{client}`\n"
+
+    dashboard += "\n---\n"
+    dashboard += "*Dashboard updates when you click 'Refresh Status'*"
+
+    return dashboard
+
+
 # ============================================================================
 # TRANSCRIPT FILE MANAGEMENT
 # ============================================================================
@@ -810,6 +896,20 @@ def create_ui():
         # Session state
         session_state = gr.State("")
 
+        # Session Status Bar (top of page)
+        with gr.Row():
+            with gr.Column(scale=4):
+                session_status_display = gr.Markdown(
+                    value="🔴 **Status**: Not Authenticated" if security_manager.auth.require_auth else "🟢 **Status**: Public Access",
+                    label="Session Status"
+                )
+            with gr.Column(scale=1):
+                with gr.Row():
+                    refresh_status_btn = gr.Button("🔄 Refresh Status", size="sm")
+                    logout_btn = gr.Button("🚪 Logout", size="sm", variant="stop")
+
+        gr.Markdown("---")
+
         with gr.Tabs() as main_tabs:
             # Tab 0: Login/Authentication
             with gr.Tab("🔐 Login", id="login_tab") as login_tab:
@@ -1047,12 +1147,71 @@ def create_ui():
                         
                         clear_all_btn = gr.Button("🗑️ ELIMINAR TODO", variant="stop", size="lg")
                         clear_all_status = gr.Markdown()
-        
+
+            # Tab 6: Security Dashboard
+            with gr.Tab("🔒 Security", visible=not security_manager.auth.require_auth):
+                gr.Markdown("""
+                ### Security & Session Management
+
+                Monitor your session status, rate limits, and security settings.
+                """)
+
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("### 📊 System Status")
+                        security_dashboard_display = gr.Markdown(value=get_security_dashboard())
+                        refresh_dashboard_btn = gr.Button("🔄 Refresh Dashboard", variant="primary")
+
+                    with gr.Column():
+                        gr.Markdown("### 👤 My Session")
+                        my_session_status = gr.Markdown(value="Not authenticated")
+                        refresh_my_status_btn = gr.Button("🔄 Refresh My Status")
+
+                gr.Markdown("""
+                ---
+                ### 💡 Tips
+
+                - **Session Timeout**: Your session expires after 1 hour of inactivity
+                - **Rate Limits**: Limits reset on a sliding window basis
+                - **Security**: Failed login attempts are tracked (max 5 attempts)
+                - **Logout**: Click the logout button in the top bar to end your session
+
+                ### 🔐 Current Configuration
+
+                Check your `.env` file or Railway environment variables to modify:
+                - `REQUIRE_AUTH` - Enable/disable authentication
+                - `ACCESS_CODE` - Set your access code
+                - `MAX_TRANSCRIPTIONS_PER_HOUR` - Transcription limit
+                - `MAX_SEARCHES_PER_MINUTE` - Search limit
+                - `MAX_CHATS_PER_MINUTE` - Chat limit
+                """)
+
+        # Event handlers - Session Management (Top Bar)
+        logout_btn.click(
+            fn=logout,
+            inputs=[session_state],
+            outputs=[login_status, session_state]
+        ).then(
+            fn=lambda _: "🔴 **Status**: Not Authenticated" if security_manager.auth.require_auth else "🟢 **Status**: Public Access",
+            inputs=[session_state],
+            outputs=[session_status_display]
+        )
+
+        refresh_status_btn.click(
+            fn=get_session_status,
+            inputs=[session_state],
+            outputs=[session_status_display]
+        )
+
         # Event handlers - Login Tab
         login_btn.click(
             fn=login,
             inputs=[access_code_input],
             outputs=[login_status, session_state]
+        ).then(
+            fn=get_session_status,
+            inputs=[session_state],
+            outputs=[session_status_display]
         )
 
         # Event handlers - Transcription Tab
@@ -1151,12 +1310,38 @@ def create_ui():
             inputs=[],
             outputs=[clear_all_status, transcript_list]
         )
-        
-        # Load transcript list on tab load
+
+        # Event handlers - Security Dashboard Tab
+        refresh_dashboard_btn.click(
+            fn=get_security_dashboard,
+            inputs=[],
+            outputs=[security_dashboard_display]
+        )
+
+        refresh_my_status_btn.click(
+            fn=get_session_status,
+            inputs=[session_state],
+            outputs=[my_session_status]
+        )
+
+        # Load transcript list on tab load and initialize security dashboard
         app.load(
             fn=get_transcript_list,
             inputs=[],
             outputs=[transcript_list]
+        )
+
+        # Initialize session status on load
+        app.load(
+            fn=lambda: create_session("public_user") if not security_manager.auth.require_auth else "",
+            inputs=[],
+            outputs=[session_state]
+        )
+
+        app.load(
+            fn=get_session_status,
+            inputs=[session_state],
+            outputs=[session_status_display]
         )
         
         gr.Markdown("""
