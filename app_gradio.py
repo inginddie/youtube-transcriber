@@ -3,11 +3,229 @@ Gradio UI for YouTube Transcriber Pro - Phase 1
 """
 import gradio as gr
 from pathlib import Path
+import os
+import hashlib
+import secrets
+import time
 
 from config import create_directories, TRANSCRIPTS_DIR, VECTOR_DB_DIR, GRADIO_PORT, GRADIO_SHARE
 from src.transcriber import YouTubeTranscriber
 from src.utils import parse_urls_input
+from src.security import security_manager
 
+# Global session management
+user_sessions = {}  # {session_id: {"authenticated": bool, "last_activity": timestamp, "user_id": str}}
+SESSION_TIMEOUT = 3600  # 1 hour
+
+
+# ============================================================================
+# SECURITY AND AUTHENTICATION FUNCTIONS
+# ============================================================================
+
+def get_client_identifier(request: gr.Request = None) -> str:
+    """Get client identifier (IP or session)"""
+    if request and hasattr(request, 'client'):
+        return request.client.host
+    return "default_user"
+
+
+def create_session(user_id: str) -> str:
+    """Create authenticated session"""
+    session_id = secrets.token_urlsafe(32)
+    user_sessions[session_id] = {
+        "authenticated": True,
+        "last_activity": time.time(),
+        "user_id": user_id
+    }
+    return session_id
+
+
+def verify_session(session_id: str) -> bool:
+    """Verify if session is valid and not expired"""
+    if not session_id or session_id not in user_sessions:
+        return False
+
+    session = user_sessions[session_id]
+
+    # Check timeout
+    if time.time() - session["last_activity"] > SESSION_TIMEOUT:
+        del user_sessions[session_id]
+        return False
+
+    # Update last activity
+    session["last_activity"] = time.time()
+    return session["authenticated"]
+
+
+def cleanup_expired_sessions():
+    """Clean up expired sessions"""
+    now = time.time()
+    expired = [sid for sid, session in user_sessions.items()
+               if now - session["last_activity"] > SESSION_TIMEOUT]
+    for sid in expired:
+        del user_sessions[sid]
+
+
+def login(access_code: str, request: gr.Request = None) -> tuple:
+    """
+    Verify access code and create session
+    Returns: (success_message, session_id)
+    """
+    # Check if auth is required
+    if not security_manager.auth.require_auth:
+        session_id = create_session("public_user")
+        return (
+            "✅ **Authentication not required**\n\nYou have full access to all features.",
+            session_id
+        )
+
+    # Verify access code
+    if security_manager.auth.verify_access_code(access_code):
+        client_id = get_client_identifier(request)
+        session_id = create_session(client_id)
+
+        return (
+            f"✅ **Login Successful!**\n\nWelcome! You now have access to all features.\n\nSession ID: `{session_id[:16]}...`\n\n**You can now use all other tabs.**",
+            session_id
+        )
+    else:
+        # Record failed attempt
+        client_id = get_client_identifier(request)
+        security_manager.record_failed_attempt(client_id)
+
+        remaining = security_manager.max_failed_attempts - security_manager.failed_attempts.get(client_id, 0)
+        warning = f"\n\n⚠️ Remaining attempts before lockout: {remaining}" if remaining > 0 else "\n\n🚫 **Account locked due to too many failed attempts.**"
+
+        return (
+            f"❌ **Invalid Access Code**\n\nPlease check your access code and try again.{warning}\n\nIf you don't have an access code, contact the administrator.",
+            ""
+        )
+
+
+def check_authentication(session_id: str, operation: str = "general") -> tuple:
+    """
+    Check if user is authenticated
+    Returns: (is_authenticated, error_message)
+    """
+    # If auth not required, allow all
+    if not security_manager.auth.require_auth:
+        return True, None
+
+    # Verify session
+    if not verify_session(session_id):
+        return False, "🔒 **Authentication Required**\n\nYour session has expired or is invalid. Please log in again."
+
+    return True, None
+
+
+def check_rate_limit(session_id: str, operation: str, request: gr.Request = None) -> tuple:
+    """
+    Check rate limit for operation
+    Returns: (is_allowed, error_message)
+    """
+    # Get client identifier
+    client_id = get_client_identifier(request)
+    if session_id and session_id in user_sessions:
+        client_id = user_sessions[session_id]["user_id"]
+
+    # Check rate limit
+    allowed, error_msg = security_manager.check_rate_limit(client_id, operation)
+
+    if not allowed:
+        return False, f"⚠️ **Rate Limit Exceeded**\n\n{error_msg}"
+
+    return True, None
+
+
+def logout(session_id: str) -> tuple:
+    """
+    Logout user and clear session
+    Returns: (message, empty_session_id)
+    """
+    if session_id and session_id in user_sessions:
+        del user_sessions[session_id]
+        return (
+            "✅ **Logged out successfully**\n\nYour session has been terminated. Please login again to continue.",
+            ""
+        )
+    return (
+        "ℹ️ **No active session**\n\nYou are not currently logged in.",
+        ""
+    )
+
+
+def get_session_status(session_id: str) -> str:
+    """Get current session status and rate limit info"""
+    if not security_manager.auth.require_auth:
+        return "🟢 **Status**: Public Access (No Authentication Required)"
+
+    if not session_id or session_id not in user_sessions:
+        return "🔴 **Status**: Not Authenticated\n\nPlease login to use the application."
+
+    session = user_sessions[session_id]
+    client_id = session["user_id"]
+
+    # Calculate time remaining
+    time_active = time.time() - session["last_activity"]
+    time_remaining = SESSION_TIMEOUT - time_active
+    minutes_remaining = int(time_remaining / 60)
+
+    # Get rate limit info
+    transcription_remaining = security_manager.transcription_limiter.get_remaining(client_id)
+    search_remaining = security_manager.search_limiter.get_remaining(client_id)
+    chat_remaining = security_manager.chat_limiter.get_remaining(client_id)
+
+    status = f"🟢 **Status**: Authenticated ✅\n\n"
+    status += f"**Session Info:**\n"
+    status += f"- Session ID: `{session_id[:16]}...`\n"
+    status += f"- User: `{client_id}`\n"
+    status += f"- Time Remaining: {minutes_remaining} minutes\n\n"
+    status += f"**Rate Limits Remaining:**\n"
+    status += f"- 🎬 Transcriptions: {transcription_remaining}/{security_manager.transcription_limiter.max_requests} per hour\n"
+    status += f"- 🔍 Searches: {search_remaining}/{security_manager.search_limiter.max_requests} per minute\n"
+    status += f"- 💬 Chat Messages: {chat_remaining}/{security_manager.chat_limiter.max_requests} per minute\n"
+
+    return status
+
+
+def get_security_dashboard() -> str:
+    """Get security dashboard with system stats"""
+    dashboard = "# 🔒 Security Dashboard\n\n"
+
+    # Authentication status
+    dashboard += "## Authentication\n"
+    if security_manager.auth.require_auth:
+        dashboard += "- **Status**: ✅ Enabled\n"
+        dashboard += f"- **Active Sessions**: {len(user_sessions)}\n"
+        dashboard += f"- **Session Timeout**: {SESSION_TIMEOUT // 60} minutes\n"
+    else:
+        dashboard += "- **Status**: ⚠️ Disabled (Public Access)\n"
+        dashboard += "- **Recommendation**: Enable REQUIRE_AUTH=true for production\n"
+
+    dashboard += "\n## Rate Limiting\n"
+    dashboard += f"- **Transcriptions**: {security_manager.transcription_limiter.max_requests} per hour\n"
+    dashboard += f"- **Searches**: {security_manager.search_limiter.max_requests} per minute\n"
+    dashboard += f"- **Chat Messages**: {security_manager.chat_limiter.max_requests} per minute\n"
+
+    dashboard += "\n## Security Features\n"
+    dashboard += f"- **Failed Attempt Limit**: {security_manager.max_failed_attempts} attempts\n"
+    dashboard += f"- **Blacklisted IPs**: {len(security_manager.blacklist)}\n"
+    dashboard += f"- **Failed Attempts Tracked**: {len(security_manager.failed_attempts)} clients\n"
+
+    if security_manager.blacklist:
+        dashboard += "\n### ⚠️ Blacklisted Clients:\n"
+        for client in security_manager.blacklist:
+            dashboard += f"- `{client}`\n"
+
+    dashboard += "\n---\n"
+    dashboard += "*Dashboard updates when you click 'Refresh Status'*"
+
+    return dashboard
+
+
+# ============================================================================
+# TRANSCRIPT FILE MANAGEMENT
+# ============================================================================
 
 def list_transcript_files():
     """List all transcript files"""
@@ -159,19 +377,30 @@ def chat_with_transcripts(message: str, history: list):
         return history + [[message, error_msg]]
 
 
-def transcribe_videos(urls_text: str, skip_existing: bool, auto_index: bool, progress=gr.Progress()):
+def transcribe_videos(urls_text: str, skip_existing: bool, auto_index: bool, session_id: str = "", progress=gr.Progress(), request: gr.Request = None):
     """
-    Transcribe videos from URLs
-    
+    Transcribe videos from URLs (with security checks)
+
     Args:
         urls_text: Text containing YouTube URLs (one per line)
         skip_existing: Whether to skip already transcribed videos
         auto_index: Whether to auto-index after transcription
+        session_id: User session ID for authentication
         progress: Gradio progress tracker
-        
+        request: Gradio request object for rate limiting
+
     Returns:
         Tuple of (status_message, file_list)
     """
+    # Check authentication
+    is_authenticated, auth_error = check_authentication(session_id)
+    if not is_authenticated:
+        return auth_error, gr.Dropdown(choices=[])
+
+    # Check rate limit
+    is_allowed, rate_error = check_rate_limit(session_id, "transcription", request)
+    if not is_allowed:
+        return rate_error, gr.Dropdown(choices=[])
     # Parse URLs
     urls = parse_urls_input(urls_text)
     
@@ -382,18 +611,29 @@ def index_transcripts_ui(progress=gr.Progress()):
         return f"❌ Error indexing transcripts: {str(e)}"
 
 
-def chat_with_transcripts(message: str, history: list, progress=gr.Progress()):
+def chat_with_transcripts(message: str, history: list, session_id: str = "", progress=gr.Progress(), request: gr.Request = None):
     """
-    Chat with transcripts using RAG
-    
+    Chat with transcripts using RAG (with security checks)
+
     Args:
         message: User message
         history: Chat history
+        session_id: User session ID for authentication
         progress: Gradio progress tracker
-        
+        request: Gradio request object for rate limiting
+
     Returns:
         Updated history
     """
+    # Check authentication
+    is_authenticated, auth_error = check_authentication(session_id)
+    if not is_authenticated:
+        return history + [[message, auth_error]]
+
+    # Check rate limit
+    is_allowed, rate_error = check_rate_limit(session_id, "chat", request)
+    if not is_allowed:
+        return history + [[message, rate_error]]
     try:
         from src.rag_engine import RAGEngine
         
@@ -426,17 +666,28 @@ def chat_with_transcripts(message: str, history: list, progress=gr.Progress()):
         return history + [[message, f"❌ Error: {str(e)}"]]
 
 
-def search_transcripts(query: str, k: int = 3):
+def search_transcripts(query: str, k: int = 3, session_id: str = "", request: gr.Request = None):
     """
-    Search transcripts semantically
-    
+    Search transcripts semantically (with security checks)
+
     Args:
         query: Search query
         k: Number of results
-        
+        session_id: User session ID for authentication
+        request: Gradio request object for rate limiting
+
     Returns:
         Search results
     """
+    # Check authentication
+    is_authenticated, auth_error = check_authentication(session_id)
+    if not is_authenticated:
+        return auth_error
+
+    # Check rate limit
+    is_allowed, rate_error = check_rate_limit(session_id, "search", request)
+    if not is_allowed:
+        return rate_error
     try:
         from src.rag_engine import RAGEngine
         
@@ -632,19 +883,78 @@ def create_ui():
     """
     
     with gr.Blocks(
-        title="YouTube Transcriber Pro", 
+        title="YouTube Transcriber Pro",
         theme=gr.themes.Soft(),
         css=custom_css
     ) as app:
         gr.Markdown("""
         # 🎥 YouTube Transcriber Pro
-        
+
         Transcribe YouTube videos and chat with your transcripts using AI
         """)
-        
-        with gr.Tabs():
-            # Tab 1: Transcription
-            with gr.Tab("📝 Transcribe Videos"):
+
+        # Session state
+        session_state = gr.State("")
+
+        # Session Status Bar (top of page)
+        with gr.Row():
+            with gr.Column(scale=4):
+                session_status_display = gr.Markdown(
+                    value="🔴 **Status**: Not Authenticated" if security_manager.auth.require_auth else "🟢 **Status**: Public Access",
+                    label="Session Status"
+                )
+            with gr.Column(scale=1):
+                with gr.Row():
+                    refresh_status_btn = gr.Button("🔄 Refresh Status", size="sm")
+                    logout_btn = gr.Button("🚪 Logout", size="sm", variant="stop")
+
+        gr.Markdown("---")
+
+        with gr.Tabs() as main_tabs:
+            # Tab 0: Login/Authentication
+            with gr.Tab("🔐 Login", id="login_tab") as login_tab:
+                gr.Markdown("""
+                ### 🔒 Authentication Required
+
+                Please enter your access code to continue.
+
+                **Note:** If authentication is disabled (REQUIRE_AUTH=false), you will be automatically logged in.
+                """)
+
+                with gr.Column():
+                    access_code_input = gr.Textbox(
+                        label="Access Code",
+                        type="password",
+                        placeholder="Enter your access code",
+                        info="Contact the administrator if you don't have an access code"
+                    )
+
+                    login_btn = gr.Button("🔓 Login", variant="primary", size="lg")
+
+                    login_status = gr.Markdown()
+
+                    gr.Markdown("""
+                    ---
+                    ### 💡 Security Features
+
+                    This application includes:
+                    - **Access Control**: Protect your instance with an access code
+                    - **Rate Limiting**: Prevent abuse with automatic request throttling
+                    - **Session Management**: Secure sessions with automatic timeout
+                    - **Failed Attempt Tracking**: Automatic blocking after too many failed logins
+
+                    ### ⚙️ Configuration
+
+                    Set these environment variables to configure security:
+                    - `REQUIRE_AUTH=true` - Enable authentication (default: false)
+                    - `ACCESS_CODE=your_secret_code` - Set access code
+                    - `MAX_TRANSCRIPTIONS_PER_HOUR=5` - Transcription rate limit
+                    - `MAX_SEARCHES_PER_MINUTE=20` - Search rate limit
+                    - `MAX_CHATS_PER_MINUTE=10` - Chat rate limit
+                    """)
+
+            # Tab 1: Transcription (initially hidden if auth required)
+            with gr.Tab("📝 Transcribe Videos", visible=not security_manager.auth.require_auth):
                 gr.Markdown("""
                 ### How to use:
                 1. Enter YouTube URLs (one per line)
@@ -699,8 +1009,8 @@ def create_ui():
                         
                         download_btn = gr.File(label="Download File", interactive=False)
             
-            # Tab 2: RAG Setup
-            with gr.Tab("🔧 RAG Setup"):
+            # Tab 2: RAG Setup (initially hidden if auth required)
+            with gr.Tab("🔧 RAG Setup", visible=not security_manager.auth.require_auth):
                 gr.Markdown("""
                 ### Setup RAG (Retrieval-Augmented Generation)
                 
@@ -730,8 +1040,8 @@ def create_ui():
                 4. Enable semantic search and chat
                 """)
             
-            # Tab 3: Chat
-            with gr.Tab("💬 Chat with Transcripts"):
+            # Tab 3: Chat (initially hidden if auth required)
+            with gr.Tab("💬 Chat with Transcripts", visible=not security_manager.auth.require_auth):
                 gr.Markdown("""
                 ### Chat with your transcripts
                 
@@ -763,8 +1073,8 @@ def create_ui():
                 **Note:** Make sure you've indexed your transcripts in the "RAG Setup" tab first!
                 """)
             
-            # Tab 4: Search
-            with gr.Tab("🔍 Search Transcripts"):
+            # Tab 4: Search (initially hidden if auth required)
+            with gr.Tab("🔍 Search Transcripts", visible=not security_manager.auth.require_auth):
                 gr.Markdown("""
                 ### Semantic Search
                 
@@ -790,8 +1100,8 @@ def create_ui():
                 search_btn = gr.Button("🔍 Search", variant="primary", size="lg")
                 search_results = gr.Markdown(label="Search Results")
             
-            # Tab 5: Management
-            with gr.Tab("⚙️ Management"):
+            # Tab 5: Management (initially hidden if auth required)
+            with gr.Tab("⚙️ Management", visible=not security_manager.auth.require_auth):
                 gr.Markdown("""
                 ### Gestión de Archivos y Base de Datos
                 
@@ -837,11 +1147,77 @@ def create_ui():
                         
                         clear_all_btn = gr.Button("🗑️ ELIMINAR TODO", variant="stop", size="lg")
                         clear_all_status = gr.Markdown()
-        
+
+            # Tab 6: Security Dashboard
+            with gr.Tab("🔒 Security", visible=not security_manager.auth.require_auth):
+                gr.Markdown("""
+                ### Security & Session Management
+
+                Monitor your session status, rate limits, and security settings.
+                """)
+
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("### 📊 System Status")
+                        security_dashboard_display = gr.Markdown(value=get_security_dashboard())
+                        refresh_dashboard_btn = gr.Button("🔄 Refresh Dashboard", variant="primary")
+
+                    with gr.Column():
+                        gr.Markdown("### 👤 My Session")
+                        my_session_status = gr.Markdown(value="Not authenticated")
+                        refresh_my_status_btn = gr.Button("🔄 Refresh My Status")
+
+                gr.Markdown("""
+                ---
+                ### 💡 Tips
+
+                - **Session Timeout**: Your session expires after 1 hour of inactivity
+                - **Rate Limits**: Limits reset on a sliding window basis
+                - **Security**: Failed login attempts are tracked (max 5 attempts)
+                - **Logout**: Click the logout button in the top bar to end your session
+
+                ### 🔐 Current Configuration
+
+                Check your `.env` file or Railway environment variables to modify:
+                - `REQUIRE_AUTH` - Enable/disable authentication
+                - `ACCESS_CODE` - Set your access code
+                - `MAX_TRANSCRIPTIONS_PER_HOUR` - Transcription limit
+                - `MAX_SEARCHES_PER_MINUTE` - Search limit
+                - `MAX_CHATS_PER_MINUTE` - Chat limit
+                """)
+
+        # Event handlers - Session Management (Top Bar)
+        logout_btn.click(
+            fn=logout,
+            inputs=[session_state],
+            outputs=[login_status, session_state]
+        ).then(
+            fn=lambda _: "🔴 **Status**: Not Authenticated" if security_manager.auth.require_auth else "🟢 **Status**: Public Access",
+            inputs=[session_state],
+            outputs=[session_status_display]
+        )
+
+        refresh_status_btn.click(
+            fn=get_session_status,
+            inputs=[session_state],
+            outputs=[session_status_display]
+        )
+
+        # Event handlers - Login Tab
+        login_btn.click(
+            fn=login,
+            inputs=[access_code_input],
+            outputs=[login_status, session_state]
+        ).then(
+            fn=get_session_status,
+            inputs=[session_state],
+            outputs=[session_status_display]
+        )
+
         # Event handlers - Transcription Tab
         transcribe_btn.click(
             fn=transcribe_videos,
-            inputs=[urls_input, skip_existing, auto_index],
+            inputs=[urls_input, skip_existing, auto_index, session_state],
             outputs=[status_output, file_list]
         )
         
@@ -873,17 +1249,17 @@ def create_ui():
         # Event handlers - Chat Tab
         msg.submit(
             fn=chat_with_transcripts,
-            inputs=[msg, chatbot],
+            inputs=[msg, chatbot, session_state],
             outputs=[chatbot]
         ).then(
             fn=lambda: "",
             inputs=[],
             outputs=[msg]
         )
-        
+
         send_btn.click(
             fn=chat_with_transcripts,
-            inputs=[msg, chatbot],
+            inputs=[msg, chatbot, session_state],
             outputs=[chatbot]
         ).then(
             fn=lambda: "",
@@ -900,7 +1276,7 @@ def create_ui():
         # Event handlers - Search Tab
         search_btn.click(
             fn=search_transcripts,
-            inputs=[search_query, search_k],
+            inputs=[search_query, search_k, session_state],
             outputs=[search_results]
         )
         
@@ -934,12 +1310,38 @@ def create_ui():
             inputs=[],
             outputs=[clear_all_status, transcript_list]
         )
-        
-        # Load transcript list on tab load
+
+        # Event handlers - Security Dashboard Tab
+        refresh_dashboard_btn.click(
+            fn=get_security_dashboard,
+            inputs=[],
+            outputs=[security_dashboard_display]
+        )
+
+        refresh_my_status_btn.click(
+            fn=get_session_status,
+            inputs=[session_state],
+            outputs=[my_session_status]
+        )
+
+        # Load transcript list on tab load and initialize security dashboard
         app.load(
             fn=get_transcript_list,
             inputs=[],
             outputs=[transcript_list]
+        )
+
+        # Initialize session status on load
+        app.load(
+            fn=lambda: create_session("public_user") if not security_manager.auth.require_auth else "",
+            inputs=[],
+            outputs=[session_state]
+        )
+
+        app.load(
+            fn=get_session_status,
+            inputs=[session_state],
+            outputs=[session_status_display]
         )
         
         gr.Markdown("""
