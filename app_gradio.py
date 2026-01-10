@@ -157,10 +157,15 @@ def logout(session_id: str) -> tuple:
 def get_session_status(session_id: str) -> str:
     """Get current session status and rate limit info"""
     if not security_manager.auth.require_auth:
-        return "🟢 **Status**: Public Access (No Authentication Required)"
+        return "⚠️ **Status**: Public Access - **NO PROTECTION ACTIVE**\n\n" + \
+               "🔓 Anyone can use this application without login.\n" + \
+               "⚠️ Your OpenAI API key is unprotected.\n" + \
+               "💡 Enable `REQUIRE_AUTH=true` to secure your app."
 
     if not session_id or session_id not in user_sessions:
-        return "🔴 **Status**: Not Authenticated\n\nPlease login to use the application."
+        return "🔴 **Status**: Not Authenticated\n\n" + \
+               "🔒 Login required to use the application.\n" + \
+               "Go to the '🔐 Login' tab to authenticate."
 
     session = user_sessions[session_id]
     client_id = session["user_id"]
@@ -175,11 +180,12 @@ def get_session_status(session_id: str) -> str:
     search_remaining = security_manager.search_limiter.get_remaining(client_id)
     chat_remaining = security_manager.chat_limiter.get_remaining(client_id)
 
-    status = f"🟢 **Status**: Authenticated ✅\n\n"
+    status = f"🟢 **Status**: Authenticated & Protected ✅\n\n"
     status += f"**Session Info:**\n"
     status += f"- Session ID: `{session_id[:16]}...`\n"
     status += f"- User: `{client_id}`\n"
-    status += f"- Time Remaining: {minutes_remaining} minutes\n\n"
+    status += f"- Time Remaining: {minutes_remaining} minutes\n"
+    status += f"- Protection: 🛡️ **ACTIVE**\n\n"
     status += f"**Rate Limits Remaining:**\n"
     status += f"- 🎬 Transcriptions: {transcription_remaining}/{security_manager.transcription_limiter.max_requests} per hour\n"
     status += f"- 🔍 Searches: {search_remaining}/{security_manager.search_limiter.max_requests} per minute\n"
@@ -190,35 +196,108 @@ def get_session_status(session_id: str) -> str:
 
 def get_security_dashboard() -> str:
     """Get security dashboard with system stats"""
-    dashboard = "# 🔒 Security Dashboard\n\n"
+    dashboard = ""
 
-    # Authentication status
-    dashboard += "## Authentication\n"
+    # CRITICAL WARNING if security is disabled
+    if not security_manager.auth.require_auth:
+        dashboard += "# 🚨 CRITICAL SECURITY WARNING 🚨\n\n"
+        dashboard += "```diff\n"
+        dashboard += "- AUTHENTICATION IS DISABLED\n"
+        dashboard += "- YOUR APPLICATION IS OPEN TO THE PUBLIC\n"
+        dashboard += "- ANYONE CAN USE YOUR OPENAI API KEY\n"
+        dashboard += "```\n\n"
+        dashboard += "## ❌ What This Means:\n\n"
+        dashboard += "| Risk | Status |\n"
+        dashboard += "|------|--------|\n"
+        dashboard += "| **Anyone can access** | ❌ UNPROTECTED |\n"
+        dashboard += "| **Anyone can transcribe** | ❌ UNPROTECTED |\n"
+        dashboard += "| **Your API costs** | ❌ UNPROTECTED |\n"
+        dashboard += "| **Rate limiting** | ⚠️ CONFIGURED BUT NOT ENFORCED |\n"
+        dashboard += "| **Login required** | ❌ NO |\n\n"
+        dashboard += "## ✅ FIX THIS NOW:\n\n"
+        dashboard += "### For Railway/Production:\n"
+        dashboard += "```bash\n"
+        dashboard += "1. Railway Dashboard → Your Project → Variables\n"
+        dashboard += "2. Click '+ New Variable'\n"
+        dashboard += "3. Add: REQUIRE_AUTH = true\n"
+        dashboard += "4. Add: ACCESS_CODE = (generate secure code below)\n"
+        dashboard += "5. Railway auto-redeploys\n"
+        dashboard += "```\n\n"
+        dashboard += "### For Local Development:\n"
+        dashboard += "```bash\n"
+        dashboard += "# Edit .env file\n"
+        dashboard += "REQUIRE_AUTH=true\n"
+        dashboard += "ACCESS_CODE=your_generated_code\n\n"
+        dashboard += "# Restart app\n"
+        dashboard += "python app_gradio.py\n"
+        dashboard += "```\n\n"
+        dashboard += "### Generate Secure Code:\n"
+        dashboard += "```bash\n"
+        dashboard += "python -c \"import secrets; print(secrets.token_urlsafe(32))\"\n"
+        dashboard += "```\n\n"
+        dashboard += "---\n\n"
+
+    # Security Status Dashboard
+    dashboard += "# 🔒 Security Status\n\n"
+
+    # Authentication status with clear indicators
     if security_manager.auth.require_auth:
-        dashboard += "- **Status**: ✅ Enabled\n"
-        dashboard += f"- **Active Sessions**: {len(user_sessions)}\n"
-        dashboard += f"- **Session Timeout**: {SESSION_TIMEOUT // 60} minutes\n"
+        dashboard += "## ✅ Authentication: ENABLED\n\n"
+        dashboard += "```diff\n"
+        dashboard += "+ PROTECTION ACTIVE\n"
+        dashboard += "+ LOGIN REQUIRED\n"
+        dashboard += "+ API KEY PROTECTED\n"
+        dashboard += "```\n\n"
+        dashboard += "| Feature | Status |\n"
+        dashboard += "|---------|--------|\n"
+        dashboard += "| **Login Required** | ✅ YES |\n"
+        dashboard += "| **Invalid Codes Rejected** | ✅ YES |\n"
+        dashboard += "| **Failed Attempts Tracked** | ✅ YES |\n"
+        dashboard += "| **Auto-Blacklist (5 attempts)** | ✅ YES |\n"
+        dashboard += "| **Session Timeout** | ✅ {0} minutes |\n".format(SESSION_TIMEOUT // 60)
+        dashboard += f"| **Active Sessions** | {len(user_sessions)} |\n\n"
     else:
-        dashboard += "- **Status**: ⚠️ Disabled (Public Access)\n"
-        dashboard += "- **Recommendation**: Enable REQUIRE_AUTH=true for production\n"
+        dashboard += "## ❌ Authentication: DISABLED\n\n"
+        dashboard += "```diff\n"
+        dashboard += "- NO PROTECTION\n"
+        dashboard += "- NO LOGIN REQUIRED\n"
+        dashboard += "- API KEY EXPOSED\n"
+        dashboard += "```\n\n"
+        dashboard += "| Feature | Status |\n"
+        dashboard += "|---------|--------|\n"
+        dashboard += "| **Login Required** | ❌ NO |\n"
+        dashboard += "| **Protection Active** | ❌ NO |\n"
+        dashboard += "| **Public Access** | ⚠️ YES - ANYONE CAN USE |\n\n"
 
-    dashboard += "\n## Rate Limiting\n"
-    dashboard += f"- **Transcriptions**: {security_manager.transcription_limiter.max_requests} per hour\n"
-    dashboard += f"- **Searches**: {security_manager.search_limiter.max_requests} per minute\n"
-    dashboard += f"- **Chat Messages**: {security_manager.chat_limiter.max_requests} per minute\n"
+    # Rate Limiting Status
+    dashboard += "## ⏱️ Rate Limiting\n\n"
+    if security_manager.auth.require_auth:
+        dashboard += "| Operation | Limit | Enforcement |\n"
+        dashboard += "|-----------|-------|-------------|\n"
+        dashboard += f"| Transcriptions | {security_manager.transcription_limiter.max_requests}/hour | ✅ ENFORCED |\n"
+        dashboard += f"| Searches | {security_manager.search_limiter.max_requests}/minute | ✅ ENFORCED |\n"
+        dashboard += f"| Chat Messages | {security_manager.chat_limiter.max_requests}/minute | ✅ ENFORCED |\n"
+    else:
+        dashboard += "| Operation | Limit | Enforcement |\n"
+        dashboard += "|-----------|-------|-------------|\n"
+        dashboard += f"| Transcriptions | {security_manager.transcription_limiter.max_requests}/hour | ⚠️ NOT ENFORCED |\n"
+        dashboard += f"| Searches | {security_manager.search_limiter.max_requests}/minute | ⚠️ NOT ENFORCED |\n"
+        dashboard += f"| Chat Messages | {security_manager.chat_limiter.max_requests}/minute | ⚠️ NOT ENFORCED |\n"
+        dashboard += "\n⚠️ **Note**: Limits are configured but authentication is required to enforce them.\n"
 
-    dashboard += "\n## Security Features\n"
-    dashboard += f"- **Failed Attempt Limit**: {security_manager.max_failed_attempts} attempts\n"
-    dashboard += f"- **Blacklisted IPs**: {len(security_manager.blacklist)}\n"
-    dashboard += f"- **Failed Attempts Tracked**: {len(security_manager.failed_attempts)} clients\n"
+    # Security Metrics
+    dashboard += "\n## 📊 Security Metrics\n\n"
+    dashboard += f"- **Failed Login Attempts**: {len(security_manager.failed_attempts)} clients tracked\n"
+    dashboard += f"- **Blacklisted IPs**: {len(security_manager.blacklist)} blocked\n"
+    dashboard += f"- **Max Failed Attempts**: {security_manager.max_failed_attempts} before blacklist\n"
 
     if security_manager.blacklist:
-        dashboard += "\n### ⚠️ Blacklisted Clients:\n"
+        dashboard += "\n### 🚫 Blacklisted Clients:\n"
         for client in security_manager.blacklist:
-            dashboard += f"- `{client}`\n"
+            dashboard += f"- `{client}` - Permanently blocked\n"
 
     dashboard += "\n---\n"
-    dashboard += "*Dashboard updates when you click 'Refresh Status'*"
+    dashboard += "*Click 'Refresh Dashboard' to update statistics*"
 
     return dashboard
 
@@ -892,6 +971,24 @@ def create_ui():
 
         Transcribe YouTube videos and chat with your transcripts using AI
         """)
+
+        # CRITICAL WARNING BANNER if security is disabled
+        if not security_manager.auth.require_auth:
+            gr.Markdown("""
+            <div style="background-color: #ff4444; color: white; padding: 20px; border-radius: 10px; margin: 20px 0; border: 3px solid #cc0000;">
+                <h2 style="margin-top: 0; color: white;">🚨 SECURITY WARNING 🚨</h2>
+                <h3 style="color: white;">AUTHENTICATION IS DISABLED - YOUR APP IS OPEN TO THE PUBLIC!</h3>
+                <p style="font-size: 16px;"><strong>ANYONE can:</strong></p>
+                <ul style="font-size: 16px;">
+                    <li>❌ Access this application</li>
+                    <li>❌ Transcribe videos using YOUR OpenAI API key</li>
+                    <li>❌ Spend YOUR money</li>
+                    <li>❌ Use all features without login</li>
+                </ul>
+                <p style="font-size: 16px;"><strong>TO FIX:</strong> Set <code>REQUIRE_AUTH=true</code> and <code>ACCESS_CODE=your_code</code> in Railway Variables or .env file</p>
+                <p style="font-size: 14px; margin-bottom: 0;">See the <strong>🔒 Security</strong> tab for detailed instructions.</p>
+            </div>
+            """)
 
         # Session state
         session_state = gr.State("")
