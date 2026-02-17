@@ -1,9 +1,14 @@
 """
 Configuration module for YouTube Transcriber Pro
 """
+
+import logging
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
+
+_config_logger = logging.getLogger("config")
 
 # Load environment variables
 load_dotenv()
@@ -42,12 +47,34 @@ GRADIO_SHARE = False
 MAX_RETRIES = 5  # Increased for rate limit handling
 RETRY_DELAY = 3  # seconds (will use exponential backoff for rate limits)
 
+
+def validate_config():
+    """Validate configuration values for types and ranges."""
+    if not isinstance(CHUNK_SIZE, int) or not (100 <= CHUNK_SIZE <= 10000):
+        raise ValueError(
+            f"CHUNK_SIZE must be an int between 100 and 10000, got {CHUNK_SIZE!r}"
+        )
+    if not isinstance(CHUNK_OVERLAP, int) or CHUNK_OVERLAP < 0 or CHUNK_OVERLAP >= CHUNK_SIZE:
+        raise ValueError(
+            f"CHUNK_OVERLAP must be an int >= 0 and < CHUNK_SIZE ({CHUNK_SIZE}), got {CHUNK_OVERLAP!r}"
+        )
+    if not isinstance(TOP_K_RESULTS, int) or not (1 <= TOP_K_RESULTS <= 20):
+        raise ValueError(f"TOP_K_RESULTS must be an int between 1 and 20, got {TOP_K_RESULTS!r}")
+    if not isinstance(TEMPERATURE, (int, float)) or not (0.0 <= TEMPERATURE <= 2.0):
+        raise ValueError(f"TEMPERATURE must be a float between 0.0 and 2.0, got {TEMPERATURE!r}")
+    if not isinstance(MAX_RETRIES, int) or not (1 <= MAX_RETRIES <= 20):
+        raise ValueError(f"MAX_RETRIES must be an int between 1 and 20, got {MAX_RETRIES!r}")
+    if not isinstance(RETRY_DELAY, (int, float)) or not (0 <= RETRY_DELAY <= 60):
+        raise ValueError(f"RETRY_DELAY must be a number between 0 and 60, got {RETRY_DELAY!r}")
+    _config_logger.debug("Configuration validated successfully")
+
+
 def create_directories():
     """Create necessary directories if they don't exist"""
     TRANSCRIPTS_DIR.mkdir(exist_ok=True)
     TEMP_AUDIO_DIR.mkdir(exist_ok=True)
     VECTOR_DB_DIR.mkdir(exist_ok=True)
-    
+
     # Create .gitkeep files
     (TEMP_AUDIO_DIR / ".gitkeep").touch()
     (VECTOR_DB_DIR / ".gitkeep").touch()

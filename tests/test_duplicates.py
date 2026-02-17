@@ -1,8 +1,9 @@
 """
 Script de prueba para detección de duplicados
 """
-from src.transcriber import YouTubeTranscriber
+
 from config import create_directories
+from src.transcriber import YouTubeTranscriber
 
 print("=" * 60)
 print("🧪 PRUEBA DE DETECCIÓN DE DUPLICADOS")
@@ -25,7 +26,7 @@ print()
 print("🔍 Intento 1: Con detección de duplicados activada")
 result1 = transcriber.process_video(test_url, index=1, skip_if_exists=True)
 
-if result1.get('skipped'):
+if result1.get("skipped"):
     print(f"✅ Video detectado como duplicado y saltado")
     print(f"   Título: {result1['title']}")
     print(f"   Archivo: {result1['json_path']}")
@@ -43,10 +44,10 @@ print()
 
 respuesta = input("¿Quieres continuar con la re-transcripción? (y/n): ")
 
-if respuesta.lower() == 'y':
+if respuesta.lower() == "y":
     result2 = transcriber.process_video(test_url, index=1, skip_if_exists=False)
-    
-    if result2.get('success'):
+
+    if result2.get("success"):
         print(f"✅ Video re-transcrito exitosamente")
         print(f"   Título: {result2['title']}")
         print(f"   Palabras: {result2['word_count']}")
@@ -66,7 +67,7 @@ print("-" * 60)
 urls_con_duplicados = [
     "https://youtu.be/WRKau5PJO4c",
     "https://www.youtube.com/watch?v=WRKau5PJO4c",  # Mismo video, URL diferente
-    "https://youtu.be/WRKau5PJO4c?si=abc123",       # Mismo video con parámetros
+    "https://youtu.be/WRKau5PJO4c?si=abc123",  # Mismo video con parámetros
 ]
 
 print(f"URLs en la lista: {len(urls_con_duplicados)}")

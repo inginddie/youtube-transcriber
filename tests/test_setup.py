@@ -1,6 +1,7 @@
 """
 Script de verificación rápida del setup
 """
+
 import sys
 
 print("=" * 60)
@@ -16,10 +17,11 @@ print()
 # Test 2: Imports básicos
 print("[2/7] Verificando imports básicos...")
 try:
+    import gradio
     import openai
     import yt_dlp
-    import gradio
     from dotenv import load_dotenv
+
     print("✅ Todos los módulos importados correctamente")
 except ImportError as e:
     print(f"❌ Error importando módulos: {e}")
@@ -29,7 +31,8 @@ print()
 # Test 3: Configuración
 print("[3/7] Verificando configuración...")
 try:
-    from config import OPENAI_API_KEY, TRANSCRIPTS_DIR, TEMP_AUDIO_DIR
+    from config import OPENAI_API_KEY, TEMP_AUDIO_DIR, TRANSCRIPTS_DIR
+
     print("✅ Configuración cargada")
 except Exception as e:
     print(f"❌ Error en configuración: {e}")
@@ -53,6 +56,7 @@ if TRANSCRIPTS_DIR.exists() and TEMP_AUDIO_DIR.exists():
 else:
     print("⚠️  Creando directorios...")
     from config import create_directories
+
     create_directories()
     print("✅ Directorios creados")
 print()
@@ -61,11 +65,11 @@ print()
 print("[6/7] Verificando utilidades...")
 try:
     from src.utils import extract_video_id, validate_url
-    
+
     test_url = "https://youtu.be/dQw4w9WgXcQ"
     video_id = extract_video_id(test_url)
     is_valid = validate_url(test_url)
-    
+
     if video_id == "dQw4w9WgXcQ" and is_valid:
         print("✅ Funciones de utilidad funcionando")
     else:
@@ -77,15 +81,11 @@ print()
 # Test 7: FFmpeg
 print("[7/7] Verificando FFmpeg...")
 import subprocess
+
 try:
-    result = subprocess.run(
-        ["ffmpeg", "-version"],
-        capture_output=True,
-        text=True,
-        timeout=5
-    )
+    result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=5)
     if result.returncode == 0:
-        version_line = result.stdout.split('\n')[0]
+        version_line = result.stdout.split("\n")[0]
         print(f"✅ {version_line}")
     else:
         print("⚠️  FFmpeg instalado pero con problemas")

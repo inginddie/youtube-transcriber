@@ -1,8 +1,9 @@
 """
 Script de prueba rápida de transcripción
 """
-from src.transcriber import YouTubeTranscriber
+
 from config import create_directories
+from src.transcriber import YouTubeTranscriber
 
 print("=" * 60)
 print("🧪 PRUEBA DE TRANSCRIPCIÓN")
@@ -25,20 +26,22 @@ print(f"📹 Video de prueba: {test_url}")
 print("⏱️  Procesando...")
 print()
 
+
 # Callback de progreso
 def progress_callback(message: str):
     print(f"   {message}")
+
 
 print("🚀 Iniciando transcripción...")
 print()
 
 try:
     result = transcriber.process_video(test_url, index=1, progress_callback=progress_callback)
-    
+
     print()
     print("=" * 60)
-    
-    if result['success']:
+
+    if result["success"]:
         print("✅ TRANSCRIPCIÓN EXITOSA!")
         print("=" * 60)
         print()
@@ -47,16 +50,17 @@ try:
         print(f"📁 JSON: {result['json_path']}")
         print(f"📁 TXT: {result['txt_path']}")
         print()
-        
+
         # Mostrar un preview del contenido
         import json
-        with open(result['json_path'], 'r', encoding='utf-8') as f:
+
+        with open(result["json_path"], "r", encoding="utf-8") as f:
             data = json.load(f)
-        
+
         print("📝 Preview de la transcripción:")
         print("-" * 60)
-        preview = data['transcript'][:200]
-        print(preview + "..." if len(data['transcript']) > 200 else preview)
+        preview = data["transcript"][:200]
+        print(preview + "..." if len(data["transcript"]) > 200 else preview)
         print("-" * 60)
         print()
         print("✨ ¡Prueba completada con éxito!")
@@ -65,12 +69,12 @@ try:
         print("  1. Ver los archivos en la carpeta 'transcripts/'")
         print("  2. Usar la interfaz web: python launch_web.py")
         print("  3. Transcribir más videos: python main.py <URL>")
-        
+
     else:
         print("❌ TRANSCRIPCIÓN FALLIDA")
         print("=" * 60)
         print(f"Error: {result['error']}")
-        
+
 except Exception as e:
     print()
     print("=" * 60)
@@ -79,6 +83,7 @@ except Exception as e:
     print(f"Error: {str(e)}")
     print()
     import traceback
+
     traceback.print_exc()
 
 print()

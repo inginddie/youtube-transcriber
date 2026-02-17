@@ -1,9 +1,11 @@
 """
 Pytest configuration and fixtures
 """
-import pytest
+
 import os
 from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -23,7 +25,7 @@ def sample_transcript_data():
         "transcript": "This is a sample transcript for testing purposes.",
         "timestamp": "2025-10-12T10:00:00",
         "index": 1,
-        "word_count": 8
+        "word_count": 8,
     }
 
 
@@ -33,5 +35,5 @@ def sample_urls():
     return [
         "https://youtu.be/dQw4w9WgXcQ",
         "https://www.youtube.com/watch?v=abc123def45",
-        "https://youtu.be/xyz789uvw12"
+        "https://youtu.be/xyz789uvw12",
     ]

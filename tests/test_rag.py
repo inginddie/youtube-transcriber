@@ -1,8 +1,10 @@
 """
 Script de prueba para el sistema RAG
 """
-from src.rag_engine import RAGEngine
+
 from pathlib import Path
+
+from src.rag_engine import RAGEngine
 
 print("=" * 60)
 print("🧪 PRUEBA DEL SISTEMA RAG")
@@ -39,8 +41,10 @@ print()
 print("🔄 Indexando transcripciones...")
 print("   (Esto puede tardar un momento...)")
 
+
 def progress_callback(message):
     print(f"   {message}")
+
 
 try:
     rag.index_transcripts(progress_callback=progress_callback)
@@ -59,21 +63,21 @@ print()
 search_queries = [
     "What is the main topic?",
     "How to create AI influencer?",
-    "What tools are mentioned?"
+    "What tools are mentioned?",
 ]
 
 for query in search_queries:
     print(f"Query: '{query}'")
     print("-" * 60)
-    
+
     try:
         results = rag.search(query, k=2)
-        
+
         for i, result in enumerate(results, 1):
             print(f"\nResult {i} (Score: {result['score']:.4f}):")
             print(f"Video: {result['metadata']['title']}")
             print(f"Content: {result['content'][:150]}...")
-        
+
         print()
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -104,18 +108,18 @@ questions = [
 for question in questions:
     print(f"❓ Question: {question}")
     print("-" * 60)
-    
+
     try:
         response = rag.chat(question)
-        
+
         print(f"🤖 Answer: {response['answer']}")
-        
-        if response['sources']:
+
+        if response["sources"]:
             print(f"\n📚 Sources:")
-            for source in response['sources']:
+            for source in response["sources"]:
                 print(f"   - {source['title']}")
                 print(f"     {source['url']}")
-        
+
         print()
     except Exception as e:
         print(f"❌ Error: {e}")

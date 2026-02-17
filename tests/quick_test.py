@@ -1,7 +1,8 @@
 """
 Prueba rápida del sistema sin usar API (solo validación)
 """
-from src.utils import extract_video_id, validate_url, parse_urls_input
+
+from src.utils import extract_video_id, parse_urls_input, validate_url
 
 print("🧪 PRUEBA RÁPIDA DEL SISTEMA")
 print("=" * 60)
@@ -12,7 +13,7 @@ print("[Test 1] Extracción de Video ID")
 test_urls = [
     "https://youtu.be/dQw4w9WgXcQ",
     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    "https://www.youtube.com/watch?v=abc123&t=10s"
+    "https://www.youtube.com/watch?v=abc123&t=10s",
 ]
 
 for url in test_urls:
@@ -26,7 +27,7 @@ print("[Test 2] Validación de URLs")
 test_cases = [
     ("https://youtu.be/dQw4w9WgXcQ", True),
     ("https://www.google.com", False),
-    ("not a url", False)
+    ("not a url", False),
 ]
 
 for url, expected in test_cases:
@@ -54,7 +55,7 @@ print()
 
 # Test 4: Configuración
 print("[Test 4] Verificación de Configuración")
-from config import TRANSCRIPTS_DIR, TEMP_AUDIO_DIR, VECTOR_DB_DIR
+from config import TEMP_AUDIO_DIR, TRANSCRIPTS_DIR, VECTOR_DB_DIR
 
 print(f"  Directorio de transcripciones: {TRANSCRIPTS_DIR}")
 print(f"  Existe: {'✅' if TRANSCRIPTS_DIR.exists() else '❌'}")
