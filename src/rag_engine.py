@@ -4,7 +4,6 @@ Handles embeddings, vector storage, and conversational chat
 """
 
 import json
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from langchain.chains import ConversationalRetrievalChain
@@ -228,3 +227,21 @@ Respuesta:"""
     def reset_conversation(self):
         """Reset conversation memory"""
         self.memory.clear()
+
+
+# Module-level singleton cache
+_rag_engine_instance: Optional["RAGEngine"] = None
+
+
+def get_rag_engine() -> RAGEngine:
+    """Return a cached RAGEngine singleton to avoid re-instantiation per request."""
+    global _rag_engine_instance
+    if _rag_engine_instance is None:
+        _rag_engine_instance = RAGEngine()
+    return _rag_engine_instance
+
+
+def reset_rag_engine() -> None:
+    """Reset the cached RAGEngine (e.g. after re-indexing)."""
+    global _rag_engine_instance
+    _rag_engine_instance = None
