@@ -154,6 +154,25 @@ def validate_url(url: str) -> bool:
     return extract_video_id(url) is not None
 
 
+def is_safe_path(file_path: str, allowed_dir: Path) -> bool:
+    """
+    Validate that a file path resolves to within the allowed directory.
+    Prevents path traversal attacks (e.g. ../../etc/passwd).
+
+    Args:
+        file_path: Path to validate
+        allowed_dir: Directory the path must be within
+
+    Returns:
+        True if path is safe, False otherwise
+    """
+    try:
+        resolved = Path(file_path).resolve()
+        return str(resolved).startswith(str(allowed_dir.resolve()))
+    except (OSError, ValueError):
+        return False
+
+
 def parse_urls_input(urls_text: str) -> list[str]:
     """
     Parse URLs from text input (one per line)

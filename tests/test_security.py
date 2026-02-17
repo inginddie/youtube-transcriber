@@ -12,6 +12,57 @@ def manager():
     return SecurityManager()
 
 
+# ============================================================================
+# AuthManager (consolidated session management)
+# ============================================================================
+
+
+class TestAuthManager:
+    @pytest.fixture
+    def auth_manager(self, manager):
+        """AuthManager with require_auth=True for testing session logic."""
+        manager.auth.require_auth = True
+        return manager.auth
+
+    def test_create_and_verify_session(self, auth_manager):
+        sid = auth_manager.create_session("user1")
+        assert auth_manager.verify_session(sid) is True
+
+    def test_verify_expired_session(self, auth_manager):
+        auth_manager.session_timeout = 1
+        sid = auth_manager.create_session("user1")
+        time.sleep(1.1)
+        assert auth_manager.verify_session(sid) is False
+
+    def test_get_session_returns_metadata(self, auth_manager):
+        sid = auth_manager.create_session("user1")
+        session = auth_manager.get_session(sid)
+        assert session is not None
+        assert session["user_id"] == "user1"
+        assert session["authenticated"] is True
+        assert "last_activity" in session
+
+    def test_get_session_returns_none_for_invalid(self, auth_manager):
+        assert auth_manager.get_session("bogus") is None
+
+    def test_destroy_session(self, auth_manager):
+        sid = auth_manager.create_session("user1")
+        assert auth_manager.destroy_session(sid) is True
+        assert auth_manager.verify_session(sid) is False
+
+    def test_destroy_nonexistent_returns_false(self, auth_manager):
+        assert auth_manager.destroy_session("nope") is False
+
+    def test_cleanup_expired_sessions(self, auth_manager):
+        auth_manager.session_timeout = 1
+        auth_manager.create_session("a")
+        auth_manager.create_session("b")
+        time.sleep(1.1)
+        removed = auth_manager.cleanup_expired_sessions()
+        assert removed == 2
+        assert len(auth_manager.sessions) == 0
+
+
 class TestRateLimiter:
     def test_allows_under_limit(self, manager):
         allowed, _ = manager.search_limiter.is_allowed("user1")

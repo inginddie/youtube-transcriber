@@ -74,8 +74,8 @@ class AuthManager:
     def __init__(self):
         self.access_code = os.getenv("ACCESS_CODE", "")
         self.require_auth = os.getenv("REQUIRE_AUTH", "false").lower() == "true"
-        self.sessions: Dict[str, datetime] = {}
-        self.session_duration = timedelta(hours=24)
+        self.sessions: Dict[str, Dict] = {}  # session_id → {user_id, created, last_activity}
+        self.session_timeout = int(os.getenv("SESSION_TIMEOUT_SECONDS", "3600"))
         self.lock = threading.Lock()
 
     def verify_access_code(self, code: str) -> bool:
@@ -84,38 +84,69 @@ class AuthManager:
             return True
         return secrets.compare_digest(code, self.access_code)
 
-    def create_session(self, identifier: str) -> str:
-        """Crea una sesión autenticada"""
+    def create_session(self, user_id: str) -> str:
+        """Crea una sesión autenticada con metadata"""
         with self.lock:
             session_id = secrets.token_urlsafe(32)
-            self.sessions[session_id] = datetime.now()
+            now = time.time()
+            self.sessions[session_id] = {
+                "user_id": user_id,
+                "authenticated": True,
+                "created": now,
+                "last_activity": now,
+            }
             return session_id
 
     def verify_session(self, session_id: str) -> bool:
-        """Verifica si una sesión es válida"""
+        """Verifica si una sesión es válida y actualiza last_activity"""
         if not self.require_auth:
             return True
 
         with self.lock:
-            if session_id not in self.sessions:
+            if not session_id or session_id not in self.sessions:
                 return False
 
-            session_time = self.sessions[session_id]
-            if datetime.now() - session_time > self.session_duration:
+            session = self.sessions[session_id]
+            now = time.time()
+            if now - session["last_activity"] > self.session_timeout:
                 del self.sessions[session_id]
                 return False
 
-            return True
+            session["last_activity"] = now
+            return session["authenticated"]
 
-    def cleanup_expired_sessions(self):
-        """Limpia sesiones expiradas"""
+    def get_session(self, session_id: str) -> Optional[Dict]:
+        """Obtiene datos de sesión si es válida"""
         with self.lock:
-            now = datetime.now()
+            if not session_id or session_id not in self.sessions:
+                return None
+            session = self.sessions[session_id]
+            now = time.time()
+            if now - session["last_activity"] > self.session_timeout:
+                del self.sessions[session_id]
+                return None
+            return dict(session)
+
+    def destroy_session(self, session_id: str) -> bool:
+        """Elimina una sesión"""
+        with self.lock:
+            if session_id and session_id in self.sessions:
+                del self.sessions[session_id]
+                return True
+            return False
+
+    def cleanup_expired_sessions(self) -> int:
+        """Limpia sesiones expiradas, retorna cantidad eliminada"""
+        with self.lock:
+            now = time.time()
             expired = [
-                sid for sid, stime in self.sessions.items() if now - stime > self.session_duration
+                sid
+                for sid, session in self.sessions.items()
+                if now - session["last_activity"] > self.session_timeout
             ]
             for sid in expired:
                 del self.sessions[sid]
+            return len(expired)
 
 
 class SecurityManager:

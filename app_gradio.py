@@ -2,11 +2,6 @@
 Gradio UI for YouTube Transcriber Pro - Phase 1
 """
 
-import hashlib
-import json
-import os
-import secrets
-import time
 from pathlib import Path
 
 import gradio as gr
@@ -15,17 +10,10 @@ from src.logger import setup_logger
 
 logger = setup_logger("app_gradio")
 
-from config import GRADIO_PORT, GRADIO_SHARE, TRANSCRIPTS_DIR, VECTOR_DB_DIR, create_directories
+from config import GRADIO_PORT, TRANSCRIPTS_DIR, VECTOR_DB_DIR, create_directories
 from src.security import security_manager
 from src.transcriber import YouTubeTranscriber
-from src.utils import parse_urls_input
-
-# Global session management
-user_sessions = (
-    {}
-)  # {session_id: {"authenticated": bool, "last_activity": timestamp, "user_id": str}}
-SESSION_TIMEOUT = 3600  # 1 hour
-
+from src.utils import is_safe_path, parse_urls_input
 
 # ============================================================================
 # SECURITY AND AUTHENTICATION FUNCTIONS
@@ -39,46 +27,6 @@ def get_client_identifier(request: gr.Request = None) -> str:
     return "default_user"
 
 
-def create_session(user_id: str) -> str:
-    """Create authenticated session"""
-    session_id = secrets.token_urlsafe(32)
-    user_sessions[session_id] = {
-        "authenticated": True,
-        "last_activity": time.time(),
-        "user_id": user_id,
-    }
-    return session_id
-
-
-def verify_session(session_id: str) -> bool:
-    """Verify if session is valid and not expired"""
-    if not session_id or session_id not in user_sessions:
-        return False
-
-    session = user_sessions[session_id]
-
-    # Check timeout
-    if time.time() - session["last_activity"] > SESSION_TIMEOUT:
-        del user_sessions[session_id]
-        return False
-
-    # Update last activity
-    session["last_activity"] = time.time()
-    return session["authenticated"]
-
-
-def cleanup_expired_sessions():
-    """Clean up expired sessions"""
-    now = time.time()
-    expired = [
-        sid
-        for sid, session in user_sessions.items()
-        if now - session["last_activity"] > SESSION_TIMEOUT
-    ]
-    for sid in expired:
-        del user_sessions[sid]
-
-
 def login(access_code: str, request: gr.Request = None) -> tuple:
     """
     Verify access code and create session
@@ -86,7 +34,7 @@ def login(access_code: str, request: gr.Request = None) -> tuple:
     """
     # Check if auth is required
     if not security_manager.auth.require_auth:
-        session_id = create_session("public_user")
+        session_id = security_manager.auth.create_session("public_user")
         return (
             "✅ **Authentication not required**\n\nYou have full access to all features.",
             session_id,
@@ -95,7 +43,7 @@ def login(access_code: str, request: gr.Request = None) -> tuple:
     # Verify access code
     if security_manager.auth.verify_access_code(access_code):
         client_id = get_client_identifier(request)
-        session_id = create_session(client_id)
+        session_id = security_manager.auth.create_session(client_id)
 
         return (
             f"✅ **Login Successful!**\n\nWelcome! You now have access to all features.\n\nSession ID: `{session_id[:16]}...`\n\n**You can now use all other tabs.**",
@@ -131,7 +79,7 @@ def check_authentication(session_id: str, operation: str = "general") -> tuple:
         return True, None
 
     # Verify session
-    if not verify_session(session_id):
+    if not security_manager.auth.verify_session(session_id):
         return (
             False,
             "🔒 **Authentication Required**\n\nYour session has expired or is invalid. Please log in again.",
@@ -147,8 +95,9 @@ def check_rate_limit(session_id: str, operation: str, request: gr.Request = None
     """
     # Get client identifier
     client_id = get_client_identifier(request)
-    if session_id and session_id in user_sessions:
-        client_id = user_sessions[session_id]["user_id"]
+    session = security_manager.auth.get_session(session_id)
+    if session:
+        client_id = session["user_id"]
 
     # Check rate limit
     allowed, error_msg = security_manager.check_rate_limit(client_id, operation)
@@ -164,8 +113,7 @@ def logout(session_id: str) -> tuple:
     Logout user and clear session
     Returns: (message, empty_session_id)
     """
-    if session_id and session_id in user_sessions:
-        del user_sessions[session_id]
+    if security_manager.auth.destroy_session(session_id):
         return (
             "✅ **Logged out successfully**\n\nYour session has been terminated. Please login again to continue.",
             "",
@@ -178,15 +126,17 @@ def get_session_status(session_id: str) -> str:
     if not security_manager.auth.require_auth:
         return "🟢 **Status**: Public Access (No Authentication Required)"
 
-    if not session_id or session_id not in user_sessions:
+    session = security_manager.auth.get_session(session_id)
+    if not session:
         return "🔴 **Status**: Not Authenticated\n\nPlease login to use the application."
 
-    session = user_sessions[session_id]
     client_id = session["user_id"]
 
     # Calculate time remaining
+    import time
+
     time_active = time.time() - session["last_activity"]
-    time_remaining = SESSION_TIMEOUT - time_active
+    time_remaining = security_manager.auth.session_timeout - time_active
     minutes_remaining = int(time_remaining / 60)
 
     # Get rate limit info
@@ -215,8 +165,10 @@ def get_security_dashboard() -> str:
     dashboard += "## Authentication\n"
     if security_manager.auth.require_auth:
         dashboard += "- **Status**: ✅ Enabled\n"
-        dashboard += f"- **Active Sessions**: {len(user_sessions)}\n"
-        dashboard += f"- **Session Timeout**: {SESSION_TIMEOUT // 60} minutes\n"
+        dashboard += f"- **Active Sessions**: {len(security_manager.auth.sessions)}\n"
+        dashboard += (
+            f"- **Session Timeout**: {security_manager.auth.session_timeout // 60} minutes\n"
+        )
     else:
         dashboard += "- **Status**: ⚠️ Disabled (Public Access)\n"
         dashboard += "- **Recommendation**: Enable REQUIRE_AUTH=true for production\n"
@@ -453,6 +405,10 @@ def read_transcript_file(file_path: str):
     if not file_path:
         return "No file selected"
 
+    if not is_safe_path(file_path, TRANSCRIPTS_DIR):
+        logger.warning(f"Path traversal attempt blocked: {file_path}")
+        return "Access denied: invalid file path."
+
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -648,6 +604,12 @@ def delete_selected_transcripts(selected_files):
     for file_path in selected_files:
         try:
             json_path = Path(file_path)
+
+            if not is_safe_path(str(json_path), TRANSCRIPTS_DIR):
+                logger.warning(f"Path traversal attempt blocked on delete: {file_path}")
+                errors.append(f"{json_path.name}: access denied")
+                continue
+
             txt_path = json_path.with_suffix(".txt")
 
             # Delete JSON
@@ -656,7 +618,7 @@ def delete_selected_transcripts(selected_files):
                 deleted.append(json_path.name)
 
             # Delete TXT
-            if txt_path.exists():
+            if txt_path.exists() and is_safe_path(str(txt_path), TRANSCRIPTS_DIR):
                 txt_path.unlink()
 
         except Exception as e:
@@ -1169,7 +1131,9 @@ def create_ui():
         # Initialize session status on load
         app.load(
             fn=lambda: (
-                create_session("public_user") if not security_manager.auth.require_auth else ""
+                security_manager.auth.create_session("public_user")
+                if not security_manager.auth.require_auth
+                else ""
             ),
             inputs=[],
             outputs=[session_state],
