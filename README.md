@@ -17,6 +17,7 @@ Open-source tool for transcribing YouTube videos using OpenAI Whisper, with sema
 - 💬 **Conversational Chat**: Ask questions about your videos
 - ⚙️ **Complete Management**: Web UI and CLI tools for managing transcripts
 - 🗄️ **Vector DB Management**: Monitor and clean your vector database
+- 🔒 **Security Hardened**: Path traversal protection, rate limiting, blacklist with TTL, session management
 - 🚀 **Easy Deployment**: Ready for Hugging Face Spaces
 
 ## 🚀 Quick Start
@@ -138,27 +139,31 @@ See [docs/MANAGEMENT.md](docs/MANAGEMENT.md) for detailed management guide.
 youtube-transcriber/
 ├── src/                    # Source code
 │   ├── transcriber.py     # Core transcription logic
-│   ├── rag_engine.py      # RAG & chat (Phase 2)
-│   └── utils.py           # Utility functions
-├── tests/                 # Unit tests
+│   ├── rag_engine.py      # RAG & chat engine (singleton cached)
+│   ├── security.py        # Rate limiting, auth, blacklist with TTL
+│   ├── logger.py          # Structured logging (console + file)
+│   └── utils.py           # Utilities (path validation, URL parsing)
+├── tests/                 # Unit tests (30+ tests)
+│   ├── test_config_validation.py
+│   ├── test_security.py
+│   ├── test_path_traversal.py
+│   ├── test_logging_integration.py
 │   ├── test_transcriber.py
 │   ├── test_utils.py
 │   └── conftest.py
 ├── docs/                  # Documentation
-│   ├── API.md
-│   ├── DEPLOYMENT.md
-│   └── ARCHITECTURE.md
 ├── transcripts/           # Output files
 ├── temp_audio/            # Temporary audio files
 ├── main.py               # CLI interface
 ├── app_gradio.py         # Gradio UI
-├── config.py             # Configuration
+├── manage.py             # Management CLI
+├── config.py             # Configuration with validation
 └── requirements.txt      # Dependencies
 ```
 
 ## 🧪 Testing
 
-Run the test suite:
+30+ tests covering config validation, security, path traversal, logging integration, and core utilities.
 
 ```bash
 # Run all tests
@@ -167,8 +172,11 @@ pytest
 # Run with coverage
 pytest --cov=src --cov-report=html
 
-# Run specific test file
-pytest tests/test_utils.py
+# Run specific test suites
+pytest tests/test_security.py          # Auth, rate limiting, blacklist TTL
+pytest tests/test_path_traversal.py    # Path validation & traversal prevention
+pytest tests/test_config_validation.py # Config type & range checks
+pytest tests/test_logging_integration.py # Structured logging verification
 ```
 
 ## 💰 Cost Estimation
@@ -212,21 +220,52 @@ Word Count: 2547
 Full transcription text here...
 ```
 
+## 🔒 Security
+
+YouTube Transcriber Pro includes production-ready security features:
+
+| Feature | Description |
+|---------|-------------|
+| **Authentication** | Optional access code via `REQUIRE_AUTH` + `ACCESS_CODE` |
+| **Rate Limiting** | Per-operation limits (transcription, search, chat) |
+| **Blacklist with TTL** | Auto-expiring IP blacklist after failed login attempts |
+| **Path Traversal Protection** | All file operations validated against allowed directories |
+| **Session Management** | Centralized sessions with configurable timeout |
+| **Structured Logging** | All errors logged via `logging` (no `print()` in production paths) |
+| **Config Validation** | `validate_config()` checks types and ranges at startup |
+
+**Security environment variables:**
+
+```bash
+REQUIRE_AUTH=true                  # Enable authentication (default: false)
+ACCESS_CODE=your_secret_code       # Access code for login
+SESSION_TIMEOUT_SECONDS=3600       # Session timeout (default: 1 hour)
+BLACKLIST_TTL_SECONDS=3600         # Blacklist expiry (default: 1 hour)
+MAX_TRANSCRIPTIONS_PER_HOUR=5      # Rate limit: transcriptions
+MAX_SEARCHES_PER_MINUTE=20         # Rate limit: searches
+MAX_CHATS_PER_MINUTE=10            # Rate limit: chat messages
+```
+
 ## 🔧 Configuration
 
-Edit `config.py` to customize:
+Edit `config.py` or use environment variables to customize:
 
 ```python
 # Model Configuration
 WHISPER_MODEL = "whisper-1"
-EMBEDDING_MODEL = "text-embedding-ada-002"  # Phase 2
-CHAT_MODEL = "gpt-4-turbo-preview"          # Phase 2
+EMBEDDING_MODEL = "text-embedding-ada-002"
+CHAT_MODEL = "gpt-4-turbo-preview"
 
 # Processing Configuration
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 200
-TOP_K_RESULTS = 3
+CHUNK_SIZE = 1000          # Validated: 100-10000
+CHUNK_OVERLAP = 200        # Validated: 0 to < CHUNK_SIZE
+TOP_K_RESULTS = 3          # Validated: 1-20
+TEMPERATURE = 0.7          # Validated: 0.0-2.0
+MAX_RETRIES = 5            # Validated: 1-20
+RETRY_DELAY = 3            # Validated: 0-60 seconds
 ```
+
+Run `validate_config()` at startup to catch invalid values early.
 
 ## 🌐 Deployment
 
@@ -260,6 +299,17 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed instructions.
 - [x] Vector database monitoring
 - [x] Bulk operations
 - [x] Statistics and reporting
+
+### Phase 4: Security & Code Quality ✅
+- [x] Path traversal protection on all file operations
+- [x] Centralized session management (single source of truth)
+- [x] Blacklist with configurable TTL and auto-expiry
+- [x] Rate limiting per operation type
+- [x] Configuration validation with type/range checks
+- [x] Structured logging (replaced all bare `print()` and `except:`)
+- [x] Dead code removal (5 duplicate functions, unreachable blocks)
+- [x] RAGEngine singleton cache (avoid re-instantiation per request)
+- [x] 30+ unit tests
 
 ### Future Features 🌟
 - [ ] Batch parallel processing
