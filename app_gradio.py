@@ -206,6 +206,7 @@ def transcribe_videos(
     skip_existing: bool,
     auto_index: bool,
     session_id: str = "",
+    session_files: list = None,
     progress=gr.Progress(),
     request: gr.Request = None,
 ):
@@ -217,26 +218,33 @@ def transcribe_videos(
         skip_existing: Whether to skip already transcribed videos
         auto_index: Whether to auto-index after transcription
         session_id: User session ID for authentication
+        session_files: List of files generated in this session
         progress: Gradio progress tracker
         request: Gradio request object for rate limiting
 
     Returns:
-        Tuple of (status_message, file_list)
+        Tuple of (status_message, updated_file_list_dropdown, updated_session_files)
     """
+    if session_files is None:
+        session_files = []
     # Check authentication
     is_authenticated, auth_error = check_authentication(session_id)
     if not is_authenticated:
-        return auth_error, gr.Dropdown(choices=[])
+        return auth_error, gr.Dropdown(choices=[]), session_files
 
     # Check rate limit
     is_allowed, rate_error = check_rate_limit(session_id, "transcription", request)
     if not is_allowed:
-        return rate_error, gr.Dropdown(choices=[])
+        return rate_error, gr.Dropdown(choices=[]), session_files
     # Parse URLs
     urls = parse_urls_input(urls_text)
 
     if not urls:
-        return "❌ No valid YouTube URLs found. Please enter at least one valid URL.", []
+        return (
+            "❌ No valid YouTube URLs found. Please enter at least one valid URL.",
+            gr.Dropdown(choices=session_files, value=None),
+            session_files,
+        )
 
     # Initialize transcriber
     transcriber = YouTubeTranscriber()
@@ -365,11 +373,23 @@ def transcribe_videos(
             summary += f"\n⚠️ **Indexing failed:** {str(e)}\n"
             summary += "You can manually index in the 'RAG Setup' tab.\n"
 
-    # Get list of transcript files and update dropdown
-    transcript_files = list_transcript_files()
+    # Collect new files from this session
+    new_files = []
+    for r in successful + skipped:
+        if r.get("json_path"):
+            new_files.append(r["json_path"])
+        if r.get("txt_path"):
+            new_files.append(r["txt_path"])
 
-    # Return summary and updated dropdown choices
-    return summary, gr.Dropdown(choices=transcript_files)
+    # Update session files list
+    updated_files = list(session_files) + new_files
+
+    # Return summary, updated dropdown with session files, and updated session state
+    return (
+        summary,
+        gr.Dropdown(choices=updated_files, value=None),
+        updated_files,
+    )
 
 
 def list_transcript_files():
@@ -756,6 +776,8 @@ def create_ui():
 
         # Session state
         session_state = gr.State("")
+        # Session files state (tracks files generated in this session)
+        session_files_state = gr.State([])
 
         # Session Status Bar (top of page)
         with gr.Row():
@@ -862,7 +884,8 @@ def create_ui():
 
                         file_list = gr.Dropdown(
                             label="Select a file to view",
-                            choices=list_transcript_files(),
+                            choices=[],
+                            value=None,
                             interactive=True,
                             allow_custom_value=True,  # Permite valores que no están en la lista inicial
                         )
@@ -1066,12 +1089,14 @@ def create_ui():
         # Event handlers - Transcription Tab
         transcribe_btn.click(
             fn=transcribe_videos,
-            inputs=[urls_input, skip_existing, auto_index, session_state],
-            outputs=[status_output, file_list],
+            inputs=[urls_input, skip_existing, auto_index, session_state, session_files_state],
+            outputs=[status_output, file_list, session_files_state],
         )
 
         refresh_btn.click(
-            fn=lambda: gr.Dropdown(choices=list_transcript_files()), inputs=[], outputs=[file_list]
+            fn=lambda files: gr.Dropdown(choices=files, value=None),
+            inputs=[session_files_state],
+            outputs=[file_list],
         )
 
         file_list.change(fn=read_transcript_file, inputs=[file_list], outputs=[file_content])
