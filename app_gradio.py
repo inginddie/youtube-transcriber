@@ -493,6 +493,10 @@ def chat_with_transcripts(
     Returns:
         Updated history
     """
+    # Validate message is not empty
+    if not message or not message.strip():
+        return history + [[message, "💬 Please enter a message to chat about your transcripts."]]
+
     # Check authentication
     is_authenticated, auth_error = check_authentication(session_id)
     if not is_authenticated:
@@ -553,6 +557,10 @@ def search_transcripts(query: str, k: int = 3, session_id: str = "", request: gr
     Returns:
         Search results
     """
+    # Validate query is not empty
+    if not query or not query.strip():
+        return "🔍 Please enter a search query to find relevant content in your transcripts."
+
     # Check authentication
     is_authenticated, auth_error = check_authentication(session_id)
     if not is_authenticated:
