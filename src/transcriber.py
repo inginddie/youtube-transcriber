@@ -183,13 +183,17 @@ class YouTubeTranscriber:
         # Orden optimizado: primero sin cookies (para servidores), luego con cookies (para local)
         strategies = [
             # Estrategia 1: Sin cookies, solo headers avanzados (mejor para servidores)
-            {"remove_cookies": True},
-            # Estrategia 2: Modo básico sin opciones avanzadas
-            {"remove_cookies": True, "basic_mode": True},
-            # Estrategia 3: Con cookies de Chrome (solo funciona si Chrome está instalado)
-            {"cookiesfrombrowser": ("chrome",)},
-            # Estrategia 4: Con cookies de Firefox (solo funciona si Firefox está instalado)
-            {"cookiesfrombrowser": ("firefox",)},
+            {"remove_cookies": True, "label": "Advanced headers (no cookies)"},
+            # Estrategia 2: Con socket de retardo (para evitar throttling)
+            {"remove_cookies": True, "socket_timeout": 30, "label": "Extended timeout"},
+            # Estrategia 3: Modo básico sin opciones avanzadas
+            {"remove_cookies": True, "basic_mode": True, "label": "Basic mode"},
+            # Estrategia 4: Con cookies de archivo local si existe
+            {"cookiesfile": True, "label": "Local cookies file"},
+            # Estrategia 5: Con cookies de Chrome (solo funciona si Chrome está instalado)
+            {"cookiesfrombrowser": ("chrome",), "label": "Chrome cookies"},
+            # Estrategia 6: Con cookies de Firefox (solo funciona si Firefox está instalado)
+            {"cookiesfrombrowser": ("firefox",), "label": "Firefox cookies"},
         ]
 
         last_error = None
@@ -198,21 +202,36 @@ class YouTubeTranscriber:
         for i, strategy in enumerate(strategies, 1):
             try:
                 logger.info(
-                    f"🔧 Strategy {i}/{len(strategies)}: Configuring yt-dlp with FFmpeg: {YouTubeTranscriber._ffmpeg_location_cache}"
+                    f"🔧 Strategy {i}/{len(strategies)} ({strategy.get('label', 'Unknown')})"
                 )
 
                 # Aplicar estrategia actual
                 current_opts = ydl_opts.copy()
 
+                # Agregar socket timeout si se especifica
+                if "socket_timeout" in strategy:
+                    current_opts["socket_timeout"] = strategy["socket_timeout"]
+
                 # Remover cookiesfrombrowser si la estrategia lo requiere
                 if strategy.get("remove_cookies"):
                     current_opts.pop("cookiesfrombrowser", None)
+                    current_opts.pop("cookiesfile", None)
 
                 # Modo básico: remover opciones avanzadas
                 if strategy.get("basic_mode"):
                     current_opts.pop("user_agent", None)
                     current_opts.pop("http_headers", None)
                     current_opts.pop("extractor_args", None)
+
+                # Agregar cookies de archivo si existe
+                if strategy.get("cookiesfile"):
+                    cookies_file = Path.home() / ".youtube_cookies.txt"
+                    if cookies_file.exists():
+                        current_opts["cookiesfile"] = str(cookies_file)
+                        logger.info(f"📖 Using cookies file: {cookies_file}")
+                    else:
+                        logger.info("ℹ️  No local cookies file found, skipping")
+                        continue
 
                 # Agregar cookies si la estrategia lo especifica
                 if "cookiesfrombrowser" in strategy:
@@ -252,22 +271,31 @@ class YouTubeTranscriber:
                     logger.warning(f"⚠️  Strategy {i}/{len(strategies)} failed: {last_error[:200]}")
 
                 if i < len(strategies):
-                    logger.info(f"🔄 Trying next strategy...")
+                    # Backoff exponencial: esperar más entre intentos
+                    delay = min(RETRY_DELAY * (2 ** (i - 1)), 30)  # Max 30 segundos
+                    logger.info(f"⏳ Waiting {delay}s before next strategy...")
+                    time.sleep(delay)
+                    logger.info(f"🔄 Trying strategy {i + 1}...")
                     continue  # Intentar siguiente estrategia
                 else:
                     # Todas las estrategias fallaron
-                    logger.error(f"❌ All {len(strategies)} strategies failed")
+                    logger.error(f"❌ All {len(strategies)} strategies failed after retries")
 
                     # Usar el primer error real, no el de cookies
                     error_to_show = first_real_error or last_error
 
                     # Mensaje más útil si es detección de bot
                     if "bot" in error_to_show.lower() or "sign in" in error_to_show.lower():
-                        raise Exception(
+                        error_msg = (
                             f"YouTube is blocking this video (bot detection). "
-                            f"This video may require authentication or may be age-restricted. "
-                            f"Try a different video. Error: {error_to_show}"
+                            f"This video may require authentication or may be age-restricted.\n\n"
+                            f"💡 Solutions:\n"
+                            f"1. Try a different video\n"
+                            f"2. Wait a few minutes and retry\n"
+                            f"3. Set YouTube cookies file at ~/.youtube_cookies.txt\n"
+                            f"\nTechnical: {error_to_show}"
                         )
+                        raise Exception(error_msg)
                     else:
                         raise Exception(
                             f"Failed to download audio after {len(strategies)} attempts. Error: {error_to_show}"
